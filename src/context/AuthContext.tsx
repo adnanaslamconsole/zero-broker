@@ -89,10 +89,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       // Mock flow for demo/testing
-      if (identifier === 'dummy@zerobroker.in' || identifier === '9999999999') {
+      const isDemoUser = 
+        identifier === 'dummy@zerobroker.in' || 
+        identifier === '9999999999' || 
+        identifier === 'paid-owner@demo.com';
+
+      if (isDemoUser) {
         // Store meta for demo verification step
-        if (name || role) {
-          localStorage.setItem('demo_user_meta', JSON.stringify({ name, role }));
+        if (name || role || identifier === 'paid-owner@demo.com') {
+          const meta = { 
+            name: name || (identifier === 'paid-owner@demo.com' ? 'Paid Demo Owner' : undefined), 
+            role: role || (identifier === 'paid-owner@demo.com' ? 'owner' : undefined),
+            isPaid: identifier === 'paid-owner@demo.com'
+          };
+          localStorage.setItem('demo_user_meta', JSON.stringify(meta));
         }
         await new Promise(resolve => setTimeout(resolve, 1000));
         toast.success('OTP sent! (Use 123456 for demo)');
@@ -141,17 +151,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       // Mock verification for demo/testing
-      if ((identifier === 'dummy@zerobroker.in' || identifier === '9999999999') && token === '123456') {
+      const isDemoUser = 
+        identifier === 'dummy@zerobroker.in' || 
+        identifier === '9999999999' || 
+        identifier === 'paid-owner@demo.com';
+
+      if (isDemoUser && token === '123456') {
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Mock profile data directly to avoid RLS issues without session
         const mockProfile: UserProfile = {
           id: '00000000-0000-0000-0000-000000000000',
-          name: 'ZeroBroker Partner',
+          name: identifier === 'paid-owner@demo.com' ? 'Paid Demo Owner' : 'ZeroBroker Partner',
           email: type === 'email' ? identifier : undefined,
           mobile: type === 'phone' ? identifier : undefined,
           avatarUrl: null,
-          roles: ['owner'],
+          roles: identifier === 'paid-owner@demo.com' ? ['owner'] : ['owner'],
           primaryRole: 'owner',
           kycStatus: 'verified',
           kycDocuments: [],
@@ -162,7 +177,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         // If specific name/role provided during login, use them for demo
-        // (In real app, this is handled by database trigger)
         const demoUser = localStorage.getItem('demo_user_meta');
         if (demoUser) {
            const meta = JSON.parse(demoUser);

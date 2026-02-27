@@ -28,6 +28,8 @@ interface PropertyCardProps {
 export function PropertyCard({ property, variant = 'default' }: PropertyCardProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const placeholderImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80';
 
   const formatPrice = (price: number) => {
     if (price >= 10000000) {
@@ -57,27 +59,28 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-card rounded-xl border border-border overflow-hidden property-card group"
+        className="bg-card rounded-2xl border border-border overflow-hidden property-card group transition-all hover:shadow-xl hover:-translate-y-1"
       >
-        <Link to={`/property/${property.id}`} className="flex flex-col md:flex-row">
+        <Link to={`/property/${property.id}`} className="flex flex-col sm:flex-row h-full">
           {/* Image Section */}
-          <div className="relative w-full md:w-80 h-56 md:h-auto flex-shrink-0">
+          <div className="relative w-full sm:w-64 md:w-80 h-48 sm:h-auto flex-shrink-0">
             <img
-              src={property.images[currentImageIndex]}
+              src={imgError ? placeholderImage : (property.images[currentImageIndex] || placeholderImage)}
               alt={property.title}
-              className="w-full h-full object-cover"
+              onError={() => setImgError(true)}
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
             
             {/* Badges */}
-            <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+            <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-wrap gap-1.5 sm:gap-2">
               {property.isPremium && (
-                <Badge variant="premium" className="gap-1">
+                <Badge variant="premium" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1">
                   <Crown className="w-3 h-3" />
                   Premium
                 </Badge>
               )}
               {property.isVerified && (
-                <Badge variant="verified" className="gap-1">
+                <Badge variant="verified" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1">
                   <ShieldCheck className="w-3 h-3" />
                   Verified
                 </Badge>
@@ -91,124 +94,87 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
                 e.stopPropagation();
                 setIsLiked(!isLiked);
               }}
-              className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
+              className="absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-all shadow-md active:scale-90"
             >
               <Heart
                 className={cn(
-                  'w-5 h-5 transition-colors',
+                  'w-4.5 h-4.5 sm:w-5 sm:h-5 transition-colors',
                   isLiked ? 'fill-destructive text-destructive' : 'text-muted-foreground'
                 )}
               />
             </button>
 
-            {/* Image Navigation */}
-            {property.images.length > 1 && (
-              <>
-                <button
-                  onClick={prevImage}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={nextImage}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1">
-                  {property.images.map((_, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        'w-1.5 h-1.5 rounded-full transition-colors',
-                        index === currentImageIndex ? 'bg-white' : 'bg-white/50'
-                      )}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
+            {/* Image Navigation - Hidden on mobile for cleaner look, use dots instead */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm">
+              {property.images.slice(0, 5).map((_, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    'w-1.5 h-1.5 rounded-full transition-all',
+                    index === currentImageIndex ? 'bg-white w-3' : 'bg-white/50'
+                  )}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Content Section */}
-          <div className="flex-1 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
-                <Badge variant={property.listingType === 'rent' ? 'rent' : 'sale'} className="mb-2">
-                  For {property.listingType === 'rent' ? 'Rent' : 'Sale'}
+          <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <Badge variant={property.listingType === 'rent' ? 'rent' : 'sale'} className="text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  {property.listingType === 'rent' ? 'For Rent' : 'For Sale'}
                 </Badge>
-                <h3 className="text-lg font-semibold text-foreground line-clamp-1 group-hover:text-accent transition-colors">
-                  {property.title}
-                </h3>
-                <p className="flex items-center gap-1.5 text-muted-foreground text-sm mt-1">
-                  <MapPin className="w-4 h-4" />
-                  {property.locality}, {property.city}
-                </p>
-              </div>
-              <div className="text-right">
-                <div className="text-xl font-bold text-foreground">
-                  {formatPrice(property.price)}
-                  {property.listingType === 'rent' && (
-                    <span className="text-sm font-normal text-muted-foreground">/mo</span>
-                  )}
-                </div>
-                {property.listingType === 'rent' && property.securityDeposit && (
-                  <div className="text-xs text-muted-foreground">
-                    Deposit: {formatPrice(property.securityDeposit)}
+                <div className="text-right">
+                  <div className="text-lg sm:text-xl font-display font-bold text-primary">
+                    {formatPrice(property.price)}
+                    {property.listingType === 'rent' && (
+                      <span className="text-xs sm:text-sm font-normal text-muted-foreground">/mo</span>
+                    )}
                   </div>
+                </div>
+              </div>
+              
+              <h3 className="text-base sm:text-lg font-display font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                {property.title}
+              </h3>
+              <p className="flex items-center gap-1.5 text-muted-foreground text-xs sm:text-sm mt-1">
+                <MapPin className="w-3.5 h-3.5" />
+                {property.locality}, {property.city}
+              </p>
+
+              {/* Features Grid */}
+              <div className="grid grid-cols-2 xs:grid-cols-4 gap-3 mt-4 text-[10px] sm:text-xs text-muted-foreground">
+                {property.bhk > 0 && (
+                  <span className="flex items-center gap-1.5 bg-secondary/50 p-1.5 rounded-lg">
+                    <Bed className="w-3.5 h-3.5 text-primary" />
+                    {property.bhk} BHK
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 bg-secondary/50 p-1.5 rounded-lg">
+                  <Bath className="w-3.5 h-3.5 text-primary" />
+                  {property.bathrooms} Bath
+                </span>
+                <span className="flex items-center gap-1.5 bg-secondary/50 p-1.5 rounded-lg">
+                  <Square className="w-3.5 h-3.5 text-primary" />
+                  {property.carpetArea} {property.areaUnit}
+                </span>
+                {property.parking > 0 && (
+                  <span className="flex items-center gap-1.5 bg-secondary/50 p-1.5 rounded-lg">
+                    <Car className="w-3.5 h-3.5 text-primary" />
+                    {property.parking} Park
+                  </span>
                 )}
               </div>
             </div>
 
-            {/* Features */}
-            <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-muted-foreground">
-              {property.bhk > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <Bed className="w-4 h-4" />
-                  {property.bhk} BHK
-                </span>
-              )}
-              <span className="flex items-center gap-1.5">
-                <Bath className="w-4 h-4" />
-                {property.bathrooms} Bath
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Square className="w-4 h-4" />
-                {property.carpetArea} {property.areaUnit}
-              </span>
-              {property.parking > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <Car className="w-4 h-4" />
-                  {property.parking} Parking
-                </span>
-              )}
-            </div>
-
-            {/* Amenities */}
-            <div className="flex flex-wrap gap-2 mt-4">
-              {property.amenities.slice(0, 4).map((amenity) => (
-                <span
-                  key={amenity}
-                  className="px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded-md"
-                >
-                  {amenity}
-                </span>
-              ))}
-              {property.amenities.length > 4 && (
-                <span className="px-2 py-1 text-xs text-muted-foreground">
-                  +{property.amenities.length - 4} more
-                </span>
-              )}
-            </div>
-
             {/* Actions */}
-            <div className="flex items-center gap-3 mt-5 pt-4 border-t border-border">
-              <Button variant="accent" className="flex-1 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 mt-5 pt-4 border-t border-border">
+              <Button variant="default" className="flex-1 h-10 sm:h-11 rounded-xl gap-2 font-bold shadow-lg shadow-primary/20">
                 <Phone className="w-4 h-4" />
                 Contact Owner
               </Button>
-              <Button variant="outline" size="icon">
+              <Button variant="secondary" size="icon" className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl">
                 <MessageCircle className="w-4 h-4" />
               </Button>
             </div>
@@ -223,27 +189,28 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-card rounded-xl border border-border overflow-hidden property-card group"
+      className="bg-card rounded-2xl border border-border overflow-hidden property-card group transition-all hover:shadow-xl hover:-translate-y-1 h-full flex flex-col"
     >
-      <Link to={`/property/${property.id}`}>
+      <Link to={`/property/${property.id}`} className="flex flex-col h-full">
         {/* Image Section */}
-        <div className="relative h-52">
+        <div className="relative h-48 sm:h-52 overflow-hidden">
           <img
-            src={property.images[currentImageIndex]}
+            src={imgError ? placeholderImage : (property.images[currentImageIndex] || placeholderImage)}
             alt={property.title}
-            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           />
           
           {/* Badges */}
-          <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-wrap gap-1.5 sm:gap-2">
             {property.isPremium && (
-              <Badge variant="premium" className="gap-1">
+              <Badge variant="premium" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1">
                 <Crown className="w-3 h-3" />
                 Premium
               </Badge>
             )}
             {property.isVerified && (
-              <Badge variant="verified" className="gap-1">
+              <Badge variant="verified" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1">
                 <ShieldCheck className="w-3 h-3" />
                 Verified
               </Badge>
@@ -257,88 +224,83 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
               e.stopPropagation();
               setIsLiked(!isLiked);
             }}
-            className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
+            className="absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-all shadow-md active:scale-90"
           >
             <Heart
               className={cn(
-                'w-5 h-5 transition-colors',
+                'w-4.5 h-4.5 sm:w-5 sm:h-5 transition-colors',
                 isLiked ? 'fill-destructive text-destructive' : 'text-muted-foreground'
               )}
             />
           </button>
 
-          {/* Image Navigation */}
-          {property.images.length > 1 && (
-            <>
-              <button
-                onClick={prevImage}
-                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={nextImage}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1">
-                {property.images.map((_, index) => (
-                  <div
-                    key={index}
-                    className={cn(
-                      'w-1.5 h-1.5 rounded-full transition-colors',
-                      index === currentImageIndex ? 'bg-white' : 'bg-white/50'
-                    )}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+          {/* Image Navigation dots */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm">
+            {property.images.slice(0, 5).map((_, index) => (
+              <div
+                key={index}
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full transition-all',
+                  index === currentImageIndex ? 'bg-white w-3' : 'bg-white/50'
+                )}
+              />
+            ))}
+          </div>
 
-          {/* Price Tag */}
-          <div className="absolute bottom-3 left-3 price-tag">
+          {/* Price Tag Overlay for mobile */}
+          <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg bg-primary/95 text-white font-bold text-sm sm:text-base shadow-lg backdrop-blur-sm">
             {formatPrice(property.price)}
-            {property.listingType === 'rent' && <span className="text-xs opacity-75">/mo</span>}
+            {property.listingType === 'rent' && <span className="text-[10px] font-normal opacity-80">/mo</span>}
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-4">
-          <Badge variant={property.listingType === 'rent' ? 'rent' : 'sale'} className="mb-2">
-            For {property.listingType === 'rent' ? 'Rent' : 'Sale'}
-          </Badge>
-          <h3 className="font-semibold text-foreground line-clamp-1 group-hover:text-accent transition-colors">
-            {property.title}
-          </h3>
-          <p className="flex items-center gap-1 text-muted-foreground text-sm mt-1">
-            <MapPin className="w-3.5 h-3.5" />
-            {property.locality}, {property.city}
-          </p>
+        {/* Content Section */}
+        <div className="p-4 sm:p-5 flex-1 flex flex-col">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant={property.listingType === 'rent' ? 'rent' : 'sale'} className="text-[9px] sm:text-[10px] uppercase tracking-wider font-bold px-1.5 py-0">
+                {property.listingType === 'rent' ? 'For Rent' : 'For Sale'}
+              </Badge>
+              <span className="text-[10px] sm:text-xs text-muted-foreground">ID: {property.id.slice(0, 8)}</span>
+            </div>
+            
+            <h3 className="text-base sm:text-lg font-display font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors leading-tight">
+              {property.title}
+            </h3>
+            <p className="flex items-center gap-1.5 text-muted-foreground text-[11px] sm:text-sm mt-1.5">
+              <MapPin className="w-3.5 h-3.5 text-primary/70" />
+              {property.locality}, {property.city}
+            </p>
 
-          {/* Features */}
-          <div className="flex items-center gap-3 mt-3 text-sm text-muted-foreground">
-            {property.bhk > 0 && (
+            {/* Features Row */}
+            <div className="flex items-center gap-3 mt-4 text-[10px] sm:text-xs text-muted-foreground font-medium">
+              {property.bhk > 0 && (
+                <span className="flex items-center gap-1">
+                  <Bed className="w-3.5 h-3.5 text-primary/70" />
+                  {property.bhk}BHK
+                </span>
+              )}
               <span className="flex items-center gap-1">
-                <Bed className="w-3.5 h-3.5" />
-                {property.bhk}
+                <Bath className="w-3.5 h-3.5 text-primary/70" />
+                {property.bathrooms}Bath
               </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Bath className="w-3.5 h-3.5" />
-              {property.bathrooms}
-            </span>
-            <span className="flex items-center gap-1">
-              <Square className="w-3.5 h-3.5" />
-              {property.carpetArea}
-            </span>
+              <span className="flex items-center gap-1">
+                <Square className="w-3.5 h-3.5 text-primary/70" />
+                {property.carpetArea}ft²
+              </span>
+            </div>
           </div>
 
-          {/* CTA */}
-          <Button variant="outline" size="sm" className="w-full mt-4 gap-2">
-            <Phone className="w-4 h-4" />
-            Contact Owner
-          </Button>
+          {/* Actions - Touch optimized */}
+          <div className="grid grid-cols-4 gap-2 mt-5">
+            <Button variant="default" className="col-span-3 h-10 sm:h-11 rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-primary/20 gap-2">
+              <Phone className="w-3.5 h-3.5" />
+              Contact Owner
+            </Button>
+            <Button variant="secondary" size="icon" className="h-10 sm:h-11 w-full rounded-xl">
+              <MessageCircle className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </Link>
     </motion.div>

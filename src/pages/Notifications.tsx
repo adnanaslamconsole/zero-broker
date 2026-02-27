@@ -25,16 +25,17 @@ export default function Notifications() {
   const { data: notifications, isLoading } = useQuery({
     queryKey: ['notifications', user?.profile?.id],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') return [];
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
+        .eq('user_id', user.profile.id)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data as Notification[];
     },
-    enabled: !!user,
+    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
   });
 
   const markAsReadMutation = useMutation({

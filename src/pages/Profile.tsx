@@ -41,6 +41,12 @@ export default function Profile() {
     mutationFn: async () => {
       if (!user) throw new Error('Not authenticated');
       
+      // Handle demo user
+      if (user.profile.id === '00000000-0000-0000-0000-000000000000') {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        return;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({ name: editName, mobile: editMobile })
@@ -66,7 +72,7 @@ export default function Profile() {
   const { data: bookings, isLoading: bookingsLoading } = useQuery({
     queryKey: ['my-bookings'],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') return [];
       const { data, error } = await supabase
         .from('service_bookings')
         .select('*, services(name, image_url)')
@@ -76,14 +82,19 @@ export default function Profile() {
       if (error) throw error;
       return data;
     },
-    enabled: !!user,
+    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
   });
 
   // Fetch subscription & property stats
   const { data: subscriptionInfo } = useQuery({
     queryKey: ['profile-subscription', user?.profile.id],
     queryFn: async () => {
-      if (!user) return null;
+      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') {
+        return {
+          plan: null,
+          used: 0
+        };
+      }
       
       const { data: sub } = await supabase
         .from('user_subscriptions')
@@ -102,7 +113,7 @@ export default function Profile() {
         used: count || 0
       };
     },
-    enabled: !!user
+    enabled: !!user,
   });
 
   const uploadAvatarMutation = useMutation({

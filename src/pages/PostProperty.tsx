@@ -92,7 +92,13 @@ export default function PostProperty() {
   const { data: subscriptionInfo, isLoading: isLoadingSubscription } = useQuery({
     queryKey: ['subscription-limits', user?.profile.id],
     queryFn: async () => {
-      if (!user) return null;
+      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') {
+        return {
+          plan: null,
+          used: 0,
+          remaining: 0
+        };
+      }
       
       // 1. Get Subscription + Plan
       const { data: sub } = await supabase
@@ -102,30 +108,41 @@ export default function PostProperty() {
         .eq('status', 'active')
         .maybeSingle();
       
-      // 2. Get Property Count
+      // 2. Count active listings
       const { count } = await supabase
         .from('properties')
         .select('*', { count: 'exact', head: true })
-        .eq('owner_id', user.profile.id);
+        .eq('owner_id', user.profile.id)
+        .neq('status', 'archived');
 
       return {
         plan: sub?.pricing_plans,
-        used: count || 0
+        used: count || 0,
+        remaining: sub?.pricing_plans ? (sub.pricing_plans.max_listings - (count || 0)) : 0
       };
     },
-    enabled: !!user
+    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
   });
 
   const maxListings = subscriptionInfo?.plan?.max_listings || 0;
   const usedListings = subscriptionInfo?.used || 0;
-  const isLimitReached = maxListings > 0 && usedListings >= maxListings;
-  const hasNoPlan = !isLoadingSubscription && !subscriptionInfo?.plan;
+  const isLimitReached = !!user && maxListings > 0 && usedListings >= maxListings;
+  const hasNoPlan = !!user && !isLoadingSubscription && !subscriptionInfo?.plan;
 
   const form = useForm<PropertyFormValues>({
     resolver: zodResolver(propertySchema),
     defaultValues: {
+      title: '',
+      description: '',
       type: 'rent',
       property_category: 'apartment',
+      price: '',
+      city: '',
+      locality: '',
+      address: '',
+      bedrooms: 2,
+      bathrooms: 2,
+      area: '',
       furnishing_status: 'semi-furnished',
       amenities: [],
     },
@@ -152,6 +169,11 @@ export default function PostProperty() {
   const uploadImagesToStorage = async () => {
     if (uploadedImages.length === 0) return [];
     
+    // Bypass for demo user
+    if (user?.profile.id === '00000000-0000-0000-0000-000000000000') {
+      return imageUrls; // Return local preview URLs for demo
+    }
+
     const urls: string[] = [];
     setUploadingImages(true);
 
@@ -194,6 +216,14 @@ export default function PostProperty() {
 
     try {
       const uploadedUrls = await uploadImagesToStorage();
+
+      // Handle demo user submission
+      if (user.profile.id === '00000000-0000-0000-0000-000000000000') {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        toast.success('Demo Property posted successfully!');
+        navigate('/properties');
+        return;
+      }
 
       const { error } = await supabase.from('properties').insert({
         owner_id: user.profile.id,
@@ -257,7 +287,7 @@ export default function PostProperty() {
         </div>
 
         {/* Subscription Limits Alert */}
-        {!isLoadingSubscription && (
+        {!!user && !isLoadingSubscription && (
           <div className="mb-8">
             {hasNoPlan ? (
               <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">

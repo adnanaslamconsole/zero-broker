@@ -22,45 +22,46 @@ const features = [
 
 export function SocietyManagement() {
   return (
-    <section className="py-16 lg:py-24 overflow-hidden">
+    <section className="mobile-optimized-spacing overflow-hidden">
       <div className="container mx-auto px-4">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           {/* Content */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
+            className="text-center lg:text-left order-2 lg:order-1"
           >
-            <span className="inline-block px-4 py-1.5 bg-accent/10 text-accent rounded-full text-sm font-medium mb-4">
+            <span className="inline-block px-4 py-1.5 bg-accent/10 text-accent rounded-full text-xs sm:text-sm font-bold mb-4 sm:mb-6 tracking-wide uppercase">
               ZeroBrokerHood
             </span>
-            <h2 className="text-3xl lg:text-4xl font-display font-bold text-foreground mb-4">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-foreground mb-4 sm:mb-6 leading-tight">
               Complete Society Management Solution
             </h2>
-            <p className="text-lg text-muted-foreground mb-8">
+            <p className="text-base sm:text-lg text-muted-foreground mb-6 sm:mb-8 leading-relaxed max-w-xl mx-auto lg:mx-0">
               Transform your housing society with our comprehensive management platform. 
               From visitor tracking to maintenance billing, we've got everything covered.
             </p>
 
             {/* Feature List */}
-            <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-8 sm:mb-10 max-w-md mx-auto lg:mx-0">
               {features.map((feature) => (
-                <div key={feature} className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-success" />
-                  <span className="text-foreground">{feature}</span>
+                <div key={feature} className="flex items-center gap-2 text-sm sm:text-base">
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-success shrink-0" />
+                  <span className="text-foreground font-medium truncate">{feature}</span>
                 </div>
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-4">
-              <Button size="lg" asChild className="gap-2">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4 justify-center lg:justify-start">
+              <Button size="lg" asChild className="gap-2 h-12 sm:h-14 rounded-xl font-bold px-8 w-full sm:w-auto">
                 <Link to="/society">
                   Get Started Free
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </Button>
-              <Button variant="outline" size="lg" asChild>
+              <Button variant="outline" size="lg" asChild className="h-12 sm:h-14 rounded-xl font-bold px-8 w-full sm:w-auto">
                 <Link to="/society/demo">Request Demo</Link>
               </Button>
             </div>
@@ -72,23 +73,23 @@ export function SocietyManagement() {
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
-            className="relative"
+            className="relative order-1 lg:order-2 mb-12 lg:mb-0"
           >
-            <div className="relative bg-gradient-to-br from-accent/10 to-primary/10 rounded-3xl p-8 lg:p-12">
-              {/* Floating Cards */}
+            <div className="relative bg-gradient-to-br from-accent/10 to-primary/10 rounded-3xl p-6 sm:p-8 lg:p-12 aspect-square lg:aspect-auto">
+              {/* Floating Cards - Hidden on very small screens or repositioned */}
               <motion.div
                 initial={{ y: 20 }}
                 animate={{ y: 0 }}
                 transition={{ repeat: Infinity, repeatType: 'reverse', duration: 2 }}
-                className="bg-card rounded-xl shadow-lg p-4 absolute -top-6 left-8"
+                className="bg-card rounded-xl shadow-xl p-3 sm:p-4 absolute -top-4 sm:-top-6 left-4 sm:left-8 z-20 border border-border/50"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
-                    <Shield className="w-5 h-5 text-success" />
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-success/10 flex items-center justify-center">
+                    <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-success" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Security Alert</p>
-                    <p className="font-medium text-sm">Visitor arrived at Gate 1</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Security Alert</p>
+                    <p className="font-bold text-xs sm:text-sm">Visitor arrived at Gate 1</p>
                   </div>
                 </div>
               </motion.div>
@@ -97,51 +98,22 @@ export function SocietyManagement() {
                 initial={{ y: -20 }}
                 animate={{ y: 0 }}
                 transition={{ repeat: Infinity, repeatType: 'reverse', duration: 2.5 }}
-                className="bg-card rounded-xl shadow-lg p-4 absolute -bottom-6 right-8"
+                className="bg-card rounded-xl shadow-xl p-3 sm:p-4 absolute -bottom-4 sm:-bottom-6 right-4 sm:right-8 z-20 border border-border/50"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center">
-                    <CreditCard className="w-5 h-5 text-accent" />
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-accent/10 flex items-center justify-center">
+                    <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-accent" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Maintenance</p>
-                    <p className="font-medium text-sm">₹5,200 paid successfully</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Maintenance</p>
+                    <p className="font-bold text-xs sm:text-sm">Bill paid successfully</p>
                   </div>
                 </div>
               </motion.div>
 
-              {/* Main Visual */}
-              <div className="bg-card rounded-2xl shadow-xl overflow-hidden">
-                <div className="bg-primary text-primary-foreground px-6 py-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Building className="w-6 h-6" />
-                    <span className="font-semibold">Palm Heights Society</span>
-                  </div>
-                  <Bell className="w-5 h-5" />
-                </div>
-                <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div className="bg-secondary rounded-lg p-4">
-                      <p className="text-2xl font-bold text-foreground">124</p>
-                      <p className="text-xs text-muted-foreground">Flats</p>
-                    </div>
-                    <div className="bg-secondary rounded-lg p-4">
-                      <p className="text-2xl font-bold text-foreground">89%</p>
-                      <p className="text-xs text-muted-foreground">Paid</p>
-                    </div>
-                    <div className="bg-secondary rounded-lg p-4">
-                      <p className="text-2xl font-bold text-foreground">5</p>
-                      <p className="text-xs text-muted-foreground">Open</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-4 bg-success/5 rounded-lg border border-success/20">
-                    <Users className="w-5 h-5 text-success" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Annual General Meeting</p>
-                      <p className="text-xs text-muted-foreground">Sunday, 10 AM • Community Hall</p>
-                    </div>
-                  </div>
-                </div>
+              {/* Central Visual Element */}
+              <div className="w-full h-full bg-card/40 backdrop-blur-sm rounded-2xl border border-white/20 flex items-center justify-center">
+                <Building className="w-24 h-24 sm:w-32 sm:h-32 text-accent/20" />
               </div>
             </div>
           </motion.div>

@@ -274,38 +274,38 @@ export default function Properties() {
       <main className="py-6">
         <div className="container mx-auto px-4">
           {/* Search Bar */}
-          <div className="bg-card rounded-xl border border-border p-4 mb-6 relative z-20">
-            <div className="flex flex-col lg:flex-row gap-4">
+          <div className="bg-card rounded-xl border border-border p-3 sm:p-4 mb-4 sm:mb-6 relative z-20">
+            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
               <div className="flex-1">
                 <LocationSearch
                   value={searchQuery}
                   onChange={setSearchQuery}
                   onLocationSelect={(loc) => {
                     setMapCenter([loc.lat, loc.lon]);
-                    // Optional: Switch to map view if you want to force it
-                    // setViewMode('map'); 
                   }}
                 />
               </div>
-              <div className="flex gap-3">
+              <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:gap-3">
                 <Button
                   variant="outline"
-                  className="gap-2"
+                  className="gap-2 h-10 sm:h-11"
                   onClick={() => setShowFilters(!showFilters)}
                 >
                   <SlidersHorizontal className="w-4 h-4" />
-                  Filters
+                  <span className="hidden xs:inline">Filters</span>
+                  <span className="xs:hidden">Filter</span>
                   {activeFilterCount > 0 && (
-                    <Badge variant="default" className="ml-1">
+                    <Badge variant="default" className="ml-1 px-1.5 min-w-[1.25rem]">
                       {activeFilterCount}
                     </Badge>
                   )}
                 </Button>
-                <div className="bg-background rounded-lg border border-input p-1 flex items-center gap-1">
+                
+                <div className="bg-background rounded-lg border border-input p-1 flex items-center justify-between sm:justify-start gap-1">
                   <Button
                     variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-8 w-8 flex-1 sm:flex-none"
                     onClick={() => setViewMode('grid')}
                   >
                     <Grid3X3 className="w-4 h-4" />
@@ -313,7 +313,7 @@ export default function Properties() {
                   <Button
                     variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-8 w-8 flex-1 sm:flex-none"
                     onClick={() => setViewMode('list')}
                   >
                     <List className="w-4 h-4" />
@@ -321,18 +321,21 @@ export default function Properties() {
                   <Button
                     variant={viewMode === 'map' ? 'secondary' : 'ghost'}
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-8 w-8 flex-1 sm:flex-none"
                     onClick={() => setViewMode('map')}
                   >
                     <MapIcon className="w-4 h-4" />
                   </Button>
                 </div>
-                <Button className="gap-2 px-6">
+
+                <Button className="col-span-2 sm:col-auto gap-2 px-6 h-10 sm:h-11 order-first sm:order-none">
                   <Search className="w-4 h-4" />
                   Search
                 </Button>
+
                 <Button
                   variant="outline"
+                  className="col-span-2 sm:col-auto h-10 sm:h-11"
                   disabled={!user || saveSearchMutation.isPending}
                   onClick={() => {
                     const params = new URLSearchParams();
@@ -348,7 +351,7 @@ export default function Properties() {
             </div>
 
             {/* Listing Type Tabs */}
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 mt-4 overflow-x-auto pb-1 no-scrollbar">
               {['rent', 'sale'].map((type) => (
                 <button
                   key={type}
@@ -359,7 +362,7 @@ export default function Properties() {
                     }))
                   }
                   className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                    'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
                     filters.listingType === type
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
@@ -377,16 +380,16 @@ export default function Properties() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-card rounded-xl border border-border p-6 mb-6"
+              className="bg-card rounded-xl border border-border p-4 sm:p-6 mb-6 overflow-hidden"
             >
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <h3 className="font-semibold text-foreground">Filters</h3>
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   Clear All
                 </Button>
               </div>
 
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Property Type */}
                 <div>
                   <label className="text-sm font-medium text-foreground mb-3 block">
@@ -487,23 +490,23 @@ export default function Properties() {
           {/* Results Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-2xl font-display font-bold text-foreground">
+              <h1 className="text-xl sm:text-2xl font-display font-bold text-foreground">
                 {filteredProperties.length} Properties Found
               </h1>
-              <p className="text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {filters.listingType === 'rent' ? 'For Rent' : filters.listingType === 'sale' ? 'For Sale' : 'All Properties'}
                 {searchQuery && ` matching "${searchQuery}"`}
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
               {/* Sort */}
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Sort by:</span>
+                <span className="text-sm text-muted-foreground hidden xs:inline">Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="bg-card border border-border rounded-lg px-2 sm:px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[120px]"
                 >
                   {sortOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -514,7 +517,7 @@ export default function Properties() {
               </div>
 
               {/* View Toggle */}
-              <div className="flex border border-border rounded-lg overflow-hidden">
+              <div className="flex border border-border rounded-lg overflow-hidden bg-card">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={cn(
@@ -540,46 +543,48 @@ export default function Properties() {
           {/* Active Filters */}
           {activeFilterCount > 0 && (
             <div className="flex flex-wrap items-center gap-2 mb-6">
-              <span className="text-sm text-muted-foreground">Active filters:</span>
-              {filters.propertyType?.map((type) => (
-                <Badge
-                  key={type}
-                  variant="secondary"
-                  className="gap-1 cursor-pointer"
-                  onClick={() => toggleFilter('propertyType', type)}
-                >
-                  {propertyTypes.find((t) => t.value === type)?.label}
-                  <X className="w-3 h-3" />
-                </Badge>
-              ))}
-              {filters.bhk?.map((bhk) => (
-                <Badge
-                  key={bhk}
-                  variant="secondary"
-                  className="gap-1 cursor-pointer"
-                  onClick={() => toggleFilter('bhk', bhk)}
-                >
-                  {bhk} BHK
-                  <X className="w-3 h-3" />
-                </Badge>
-              ))}
-              {filters.furnishing?.map((f) => (
-                <Badge
-                  key={f}
-                  variant="secondary"
-                  className="gap-1 cursor-pointer"
-                  onClick={() => toggleFilter('furnishing', f)}
-                >
-                  {furnishingOptions.find((opt) => opt.value === f)?.label}
-                  <X className="w-3 h-3" />
-                </Badge>
-              ))}
+              <span className="text-xs sm:text-sm text-muted-foreground">Active:</span>
+              <div className="flex flex-wrap gap-2">
+                {filters.propertyType?.map((type) => (
+                  <Badge
+                    key={type}
+                    variant="secondary"
+                    className="gap-1 cursor-pointer py-1"
+                    onClick={() => toggleFilter('propertyType', type)}
+                  >
+                    {propertyTypes.find((t) => t.value === type)?.label}
+                    <X className="w-3 h-3" />
+                  </Badge>
+                ))}
+                {filters.bhk?.map((bhk) => (
+                  <Badge
+                    key={bhk}
+                    variant="secondary"
+                    className="gap-1 cursor-pointer py-1"
+                    onClick={() => toggleFilter('bhk', bhk)}
+                  >
+                    {bhk} BHK
+                    <X className="w-3 h-3" />
+                  </Badge>
+                ))}
+                {filters.furnishing?.map((f) => (
+                  <Badge
+                    key={f}
+                    variant="secondary"
+                    className="gap-1 cursor-pointer py-1"
+                    onClick={() => toggleFilter('furnishing', f)}
+                  >
+                    {furnishingOptions.find((opt) => opt.value === f)?.label}
+                    <X className="w-3 h-3" />
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Property Grid/List */}
           {viewMode === 'map' ? (
-            <div className="h-[600px] rounded-xl overflow-hidden border border-border relative z-0">
+            <div className="h-[calc(100vh-300px)] min-h-[400px] sm:h-[600px] rounded-xl overflow-hidden border border-border relative z-0">
               <PropertyMap 
                 properties={filteredProperties} 
                 center={mapCenter}
@@ -589,7 +594,7 @@ export default function Properties() {
             <div
               className={cn(
                 viewMode === 'grid'
-                  ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6'
+                  ? 'responsive-grid'
                   : 'space-y-4'
               )}
             >
@@ -607,12 +612,12 @@ export default function Properties() {
               </div>
             </div>
           ) : (
-            <div className="text-center py-16">
-              <div className="w-24 h-24 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-                <Search className="w-10 h-10 text-muted-foreground" />
+            <div className="text-center py-12 sm:py-16">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                <Search className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground" />
               </div>
-              <h3 className="text-xl font-semibold text-foreground mb-2">No properties found</h3>
-              <p className="text-muted-foreground mb-6">
+              <h3 className="text-lg sm:text-xl font-semibold text-foreground mb-2">No properties found</h3>
+              <p className="text-sm text-muted-foreground mb-6">
                 Try adjusting your filters or search criteria
               </p>
               <Button onClick={clearFilters}>Clear All Filters</Button>

@@ -29,6 +29,7 @@ import AboutUs from "./pages/AboutUs";
 import Careers from "./pages/Careers";
 import Blog from "./pages/Blog";
 import Press from "./pages/Press";
+import { MobileNav } from "./components/layout/MobileNav";
 
 const queryClient = new QueryClient();
 
@@ -39,33 +40,36 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/properties" element={<Properties />} />
-            <Route path="/property/:id" element={<PropertyDetail />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/post-property" element={<PostProperty />} />
-            <Route path="/services" element={<Services />} />
-            <Route path="/services/:id" element={<ServiceDetail />} />
-            <Route path="/society" element={<Society />} />
-            <Route path="/owner/dashboard" element={<OwnerDashboard />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/payments" element={<Payments />} />
-            <Route path="/agreements" element={<Agreements />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/plans" element={<Plans />} />
-            <Route path="/help-center" element={<HelpCenter />} />
-            <Route path="/contact" element={<ContactUs />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/about" element={<AboutUs />} />
-            <Route path="/careers" element={<Careers />} />
-            <Route path="/blog" element={<Blog />} />
-            <Route path="/press" element={<Press />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <div className="flex flex-col min-h-screen pb-16 lg:pb-0">
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/properties" element={<Properties />} />
+              <Route path="/property/:id" element={<PropertyDetail />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/post-property" element={<PostProperty />} />
+              <Route path="/services" element={<Services />} />
+              <Route path="/services/:id" element={<ServiceDetail />} />
+              <Route path="/society" element={<Society />} />
+              <Route path="/owner/dashboard" element={<OwnerDashboard />} />
+              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/agreements" element={<Agreements />} />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/plans" element={<Plans />} />
+              <Route path="/help-center" element={<HelpCenter />} />
+              <Route path="/contact" element={<ContactUs />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
+              <Route path="/about" element={<AboutUs />} />
+              <Route path="/careers" element={<Careers />} />
+              <Route path="/blog" element={<Blog />} />
+              <Route path="/press" element={<Press />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+            <MobileNav />
+          </div>
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>

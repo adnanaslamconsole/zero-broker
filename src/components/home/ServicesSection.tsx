@@ -72,20 +72,20 @@ const services = [
 
 export function ServicesSection() {
   return (
-    <section className="py-16 lg:py-24 bg-secondary/50">
+    <section className="mobile-optimized-spacing bg-secondary/50">
       <div className="container mx-auto px-4">
         {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="text-3xl lg:text-4xl font-display font-bold text-foreground">
+        <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-foreground">
             Home Services
           </h2>
-          <p className="text-muted-foreground mt-3">
+          <p className="text-sm sm:text-base text-muted-foreground mt-3">
             Everything you need to settle into your new home, all in one place
           </p>
         </div>
 
         {/* Services Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {services.map((service, index) => (
             <motion.div
               key={service.id}
@@ -96,25 +96,25 @@ export function ServicesSection() {
             >
               <Link
                 to={`/services/${service.id}`}
-                className="group block bg-card rounded-xl border border-border p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+                className="group block bg-card rounded-2xl border border-border p-5 sm:p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
               >
                 <div className="flex items-start gap-4">
                   <div className={cn(
-                    'w-14 h-14 rounded-xl flex items-center justify-center text-white shrink-0',
+                    'w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-current/10',
                     service.color
                   )}>
-                    <service.icon className="w-7 h-7" />
+                    <service.icon className="w-6 h-6 sm:w-7 sm:h-7" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-foreground group-hover:text-accent transition-colors">
+                    <h3 className="font-bold text-foreground group-hover:text-accent transition-colors leading-tight">
                       {service.title}
                     </h3>
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                    <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 line-clamp-2 leading-relaxed">
                       {service.description}
                     </p>
-                    <div className="flex items-center gap-3 mt-3 text-sm">
-                      <span className="flex items-center gap-1 text-warning">
-                        <Star className="w-4 h-4 fill-current" />
+                    <div className="flex items-center gap-3 mt-3 text-[10px] sm:text-sm">
+                      <span className="flex items-center gap-1 text-warning font-medium">
+                        <Star className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" />
                         {service.rating}
                       </span>
                       <span className="text-muted-foreground">
@@ -122,7 +122,7 @@ export function ServicesSection() {
                       </span>
                     </div>
                   </div>
-                  <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-accent group-hover:translate-x-1 transition-all shrink-0" />
+                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground group-hover:text-accent group-hover:translate-x-1 transition-all shrink-0 mt-1" />
                 </div>
               </Link>
             </motion.div>
@@ -130,8 +130,8 @@ export function ServicesSection() {
         </div>
 
         {/* CTA */}
-        <div className="text-center mt-10">
-          <Button variant="default" size="lg" asChild className="gap-2">
+        <div className="text-center mt-10 sm:mt-12">
+          <Button variant="default" size="lg" asChild className="gap-2 h-12 sm:h-14 px-8 rounded-xl font-bold">
             <Link to="/services">
               Explore All Services
               <ArrowRight className="w-4 h-4" />

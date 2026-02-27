@@ -78,14 +78,34 @@ const transformProperty = (dbProperty: any): Property => ({
   isActive: true,
 });
 
+import { sampleProperties } from '@/data/sampleProperties';
+
+// Helper to check if string is valid UUID
+const isUUID = (str: string) => {
+  const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return regex.test(str);
+};
+
 export default function PropertyDetail() {
   const { id } = useParams();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const placeholderImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80';
 
   const { data: property, isLoading } = useQuery({
     queryKey: ['property', id],
     queryFn: async () => {
+      if (!id) return null;
+      
+      // If it's not a UUID, try to find in sampleProperties first
+      if (!isUUID(id)) {
+        const sample = sampleProperties.find(p => p.id === id);
+        if (sample) return sample;
+        // If not in samples and not UUID, it's definitely invalid for Supabase
+        return null; 
+      }
+
       const { data, error } = await supabase
         .from('properties')
         .select('*')
@@ -155,46 +175,47 @@ export default function PropertyDetail() {
             Back to listings
           </Link>
 
-          <div className="grid lg:grid-cols-3 gap-8">
+          <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 sm:gap-8">
             {/* Main Content */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-4 sm:space-y-6">
               {/* Image Gallery */}
-              <div className="relative rounded-2xl overflow-hidden">
-                <div className="aspect-video relative">
+              <div className="relative rounded-2xl overflow-hidden bg-muted">
+                <div className="aspect-[4/3] sm:aspect-video relative group">
                   <img
-                    src={property.images[currentImageIndex]}
+                    src={imgError ? placeholderImage : (property.images[currentImageIndex] || placeholderImage)}
                     alt={property.title}
+                    onError={() => setImgError(true)}
                     className="w-full h-full object-cover"
                   />
 
-                  {/* Navigation */}
+                  {/* Navigation - Hidden on small mobile, shown on hover/sm */}
                   {property.images.length > 1 && (
                     <>
                       <button
                         onClick={prevImage}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
+                        className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-all opacity-0 group-hover:opacity-100 hidden sm:flex"
                       >
-                        <ChevronLeft className="w-6 h-6" />
+                        <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
                       </button>
                       <button
                         onClick={nextImage}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
+                        className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-all opacity-0 group-hover:opacity-100 hidden sm:flex"
                       >
-                        <ChevronRight className="w-6 h-6" />
+                        <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
                       </button>
                     </>
                   )}
 
                   {/* Badges */}
-                  <div className="absolute top-4 left-4 flex gap-2">
+                  <div className="absolute top-3 left-3 sm:top-4 sm:left-4 flex flex-wrap gap-2">
                     {property.isPremium && (
-                      <Badge variant="premium" className="gap-1">
+                      <Badge variant="premium" className="gap-1 text-[10px] sm:text-xs">
                         <Crown className="w-3 h-3" />
                         Premium
                       </Badge>
                     )}
                     {property.isVerified && (
-                      <Badge variant="verified" className="gap-1">
+                      <Badge variant="verified" className="gap-1 text-[10px] sm:text-xs">
                         <ShieldCheck className="w-3 h-3" />
                         Verified
                       </Badge>
@@ -202,39 +223,39 @@ export default function PropertyDetail() {
                   </div>
 
                   {/* Actions */}
-                  <div className="absolute top-4 right-4 flex gap-2">
+                  <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex gap-2">
                     <button
                       onClick={() => setIsLiked(!isLiked)}
-                      className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
                     >
                       <Heart
                         className={cn(
-                          'w-5 h-5',
+                          'w-4 h-4 sm:w-5 sm:h-5',
                           isLiked ? 'fill-destructive text-destructive' : 'text-muted-foreground'
                         )}
                       />
                     </button>
-                    <button className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors">
-                      <Share2 className="w-5 h-5 text-muted-foreground" />
+                    <button className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors shadow-sm">
+                      <Share2 className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
                     </button>
                   </div>
 
                   {/* Image Counter */}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-sm rounded-full">
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-black/60 text-white text-[10px] sm:text-xs rounded-full backdrop-blur-sm">
                     {currentImageIndex + 1} / {property.images.length}
                   </div>
                 </div>
 
                 {/* Thumbnails */}
                 {property.images.length > 1 && (
-                  <div className="flex gap-2 mt-2 overflow-x-auto pb-2">
+                  <div className="flex gap-2 p-2 overflow-x-auto no-scrollbar bg-card border-t border-border">
                     {property.images.map((img, index) => (
                       <button
                         key={index}
                         onClick={() => setCurrentImageIndex(index)}
                         className={cn(
-                          'w-20 h-14 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-colors',
-                          index === currentImageIndex ? 'border-accent' : 'border-transparent'
+                          'w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all',
+                          index === currentImageIndex ? 'border-primary' : 'border-transparent opacity-60 hover:opacity-100'
                         )}
                       >
                         <img src={img} alt="" className="w-full h-full object-cover" />
@@ -245,130 +266,135 @@ export default function PropertyDetail() {
               </div>
 
               {/* Property Info */}
-              <div className="bg-card rounded-xl border border-border p-6">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <Badge variant={property.listingType === 'rent' ? 'rent' : 'sale'}>
-                      For {property.listingType === 'rent' ? 'Rent' : 'Sale'}
-                    </Badge>
-                    <h1 className="text-2xl lg:text-3xl font-display font-bold text-foreground mt-2">
+              <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+                  <div className="flex-1">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <Badge variant={property.listingType === 'rent' ? 'rent' : 'sale'}>
+                        For {property.listingType === 'rent' ? 'Rent' : 'Sale'}
+                      </Badge>
+                      <Badge variant="secondary" className="bg-secondary/50">
+                        {property.propertyType}
+                      </Badge>
+                    </div>
+                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold text-foreground leading-tight">
                       {property.title}
                     </h1>
-                    <p className="flex items-center gap-1.5 text-muted-foreground mt-2">
-                      <MapPin className="w-4 h-4" />
-                      {property.address}, {property.locality}, {property.city}
+                    <p className="flex items-start gap-1.5 text-muted-foreground mt-2 text-sm sm:text-base">
+                      <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>{property.address}, {property.locality}, {property.city}</span>
                     </p>
                   </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-foreground">
+                  <div className="sm:text-right flex flex-row sm:flex-col items-baseline sm:items-end gap-2 border-t sm:border-t-0 pt-4 sm:pt-0">
+                    <div className="text-2xl sm:text-3xl font-bold text-primary">
                       {formatPrice(property.price)}
                       {property.listingType === 'rent' && (
-                        <span className="text-base font-normal text-muted-foreground">/month</span>
+                        <span className="text-sm sm:text-base font-normal text-muted-foreground ml-1">/mo</span>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      ₹{property.pricePerSqft}/{property.areaUnit}
+                    <p className="text-xs sm:text-sm text-muted-foreground">
+                      ₹{property.pricePerSqft.toLocaleString()}/{property.areaUnit}
                     </p>
                   </div>
                 </div>
 
                 {/* Quick Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-6 border-y border-border">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 py-6 border-y border-border">
                   {property.bhk > 0 && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                        <Bed className="w-5 h-5 text-foreground" />
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
+                        <Bed className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                       </div>
-                      <div>
-                        <p className="font-semibold text-foreground">{property.bhk} BHK</p>
-                        <p className="text-xs text-muted-foreground">Bedrooms</p>
+                      <div className="min-w-0">
+                        <p className="font-bold text-foreground text-sm sm:text-base truncate">{property.bhk} BHK</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-medium">Beds</p>
                       </div>
                     </div>
                   )}
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                      <Bath className="w-5 h-5 text-foreground" />
+                  <div className="flex items-center gap-2.5 sm:gap-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
+                      <Bath className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-foreground">{property.bathrooms}</p>
-                      <p className="text-xs text-muted-foreground">Bathrooms</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-foreground text-sm sm:text-base truncate">{property.bathrooms}</p>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-medium">Baths</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                      <Square className="w-5 h-5 text-foreground" />
+                  <div className="flex items-center gap-2.5 sm:gap-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
+                      <Square className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-foreground">
-                        {property.carpetArea} {property.areaUnit}
+                    <div className="min-w-0">
+                      <p className="font-bold text-foreground text-sm sm:text-base truncate">
+                        {property.carpetArea} <span className="text-xs font-medium">{property.areaUnit}</span>
                       </p>
-                      <p className="text-xs text-muted-foreground">Carpet Area</p>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-medium">Area</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                      <Building className="w-5 h-5 text-foreground" />
+                  <div className="flex items-center gap-2.5 sm:gap-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
+                      <Building className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-foreground capitalize">{property.furnishing}</p>
-                      <p className="text-xs text-muted-foreground">Furnishing</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-foreground text-sm sm:text-base truncate capitalize">{property.furnishing}</p>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-medium">Status</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Description */}
                 <div className="py-6 border-b border-border">
-                  <h2 className="text-lg font-semibold text-foreground mb-3">Description</h2>
-                  <p className="text-muted-foreground leading-relaxed">{property.description}</p>
+                  <h2 className="text-lg font-bold text-foreground mb-3">About this property</h2>
+                  <p className="text-muted-foreground leading-relaxed text-sm sm:text-base whitespace-pre-line">{property.description}</p>
                 </div>
 
                 {/* Details */}
                 <div className="py-6 border-b border-border">
-                  <h2 className="text-lg font-semibold text-foreground mb-4">Property Details</h2>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="flex justify-between py-2 border-b border-border">
-                      <span className="text-muted-foreground">Property Type</span>
-                      <span className="font-medium text-foreground capitalize">{property.propertyType}</span>
+                  <h2 className="text-lg font-bold text-foreground mb-4">Detailed Specifications</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 sm:gap-y-4">
+                    <div className="flex justify-between py-2 border-b border-border/50">
+                      <span className="text-muted-foreground text-sm">Property Type</span>
+                      <span className="font-semibold text-foreground text-sm capitalize">{property.propertyType}</span>
                     </div>
-                    <div className="flex justify-between py-2 border-b border-border">
-                      <span className="text-muted-foreground">Floor</span>
-                      <span className="font-medium text-foreground">
+                    <div className="flex justify-between py-2 border-b border-border/50">
+                      <span className="text-muted-foreground text-sm">Floor</span>
+                      <span className="font-semibold text-foreground text-sm">
                         {property.floor} of {property.totalFloors}
                       </span>
                     </div>
-                    <div className="flex justify-between py-2 border-b border-border">
-                      <span className="text-muted-foreground">Carpet Area</span>
-                      <span className="font-medium text-foreground">
+                    <div className="flex justify-between py-2 border-b border-border/50">
+                      <span className="text-muted-foreground text-sm">Carpet Area</span>
+                      <span className="font-semibold text-foreground text-sm">
                         {property.carpetArea} {property.areaUnit}
                       </span>
                     </div>
-                    <div className="flex justify-between py-2 border-b border-border">
-                      <span className="text-muted-foreground">Built-up Area</span>
-                      <span className="font-medium text-foreground">
+                    <div className="flex justify-between py-2 border-b border-border/50">
+                      <span className="text-muted-foreground text-sm">Built-up Area</span>
+                      <span className="font-semibold text-foreground text-sm">
                         {property.builtUpArea} {property.areaUnit}
                       </span>
                     </div>
-                    <div className="flex justify-between py-2 border-b border-border">
-                      <span className="text-muted-foreground">Balconies</span>
-                      <span className="font-medium text-foreground">{property.balconies}</span>
+                    <div className="flex justify-between py-2 border-b border-border/50">
+                      <span className="text-muted-foreground text-sm">Balconies</span>
+                      <span className="font-semibold text-foreground text-sm">{property.balconies}</span>
                     </div>
-                    <div className="flex justify-between py-2 border-b border-border">
-                      <span className="text-muted-foreground">Parking</span>
-                      <span className="font-medium text-foreground">{property.parking} spots</span>
+                    <div className="flex justify-between py-2 border-b border-border/50">
+                      <span className="text-muted-foreground text-sm">Parking</span>
+                      <span className="font-semibold text-foreground text-sm">{property.parking} spots</span>
                     </div>
                     {property.securityDeposit && (
-                      <div className="flex justify-between py-2 border-b border-border">
-                        <span className="text-muted-foreground">Security Deposit</span>
-                        <span className="font-medium text-foreground">
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground text-sm">Security Deposit</span>
+                        <span className="font-semibold text-primary text-sm">
                           {formatPrice(property.securityDeposit)}
                         </span>
                       </div>
                     )}
                     {property.maintenanceCharges && (
-                      <div className="flex justify-between py-2 border-b border-border">
-                        <span className="text-muted-foreground">Maintenance</span>
-                        <span className="font-medium text-foreground">
-                          ₹{property.maintenanceCharges.toLocaleString()}/month
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground text-sm">Maintenance</span>
+                        <span className="font-semibold text-foreground text-sm">
+                          ₹{property.maintenanceCharges.toLocaleString()}/mo
                         </span>
                       </div>
                     )}
@@ -376,23 +402,23 @@ export default function PropertyDetail() {
                 </div>
 
                 <div className="py-6">
-                  <h2 className="text-lg font-semibold text-foreground mb-4">Amenities</h2>
+                  <h2 className="text-lg font-bold text-foreground mb-4">Amenities & Features</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {property.amenities.map((amenity) => (
                       <div
                         key={amenity}
-                        className="flex items-center gap-2 text-sm text-foreground"
+                        className="flex items-center gap-2.5 text-sm text-foreground bg-secondary/30 px-3 py-2 rounded-lg"
                       >
-                        <Check className="w-4 h-4 text-success" />
-                        {amenity}
+                        <Check className="w-4 h-4 text-success shrink-0" />
+                        <span className="truncate">{amenity}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div className="py-6 border-t border-border">
-                  <h2 className="text-lg font-semibold text-foreground mb-4">Location</h2>
-                  <div className="aspect-video rounded-xl overflow-hidden border border-border">
+                  <h2 className="text-lg font-bold text-foreground mb-4">Explore the Area</h2>
+                  <div className="aspect-[21/9] sm:aspect-video rounded-2xl overflow-hidden border border-border shadow-inner">
                     <iframe
                       title="Map"
                       width="100%"
@@ -400,6 +426,7 @@ export default function PropertyDetail() {
                       loading="lazy"
                       referrerPolicy="no-referrer-when-downgrade"
                       src={`https://www.google.com/maps?q=${property.latitude},${property.longitude}&output=embed`}
+                      className="grayscale contrast-[1.1]"
                     />
                   </div>
                 </div>
@@ -409,75 +436,74 @@ export default function PropertyDetail() {
             {/* Sidebar */}
             <div className="space-y-6">
               {/* Contact Card */}
-              <div className="bg-card rounded-xl border border-border p-6 sticky top-24">
+              <div className="bg-card rounded-2xl border border-border p-5 sm:p-6 sticky top-24 shadow-sm">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold">
-                    O
+                  <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary text-2xl font-black">
+                    {property.postedBy === 'owner' ? 'O' : 'A'}
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">Property Owner</p>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <p className="font-bold text-foreground">Property Owner</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <ShieldCheck className="w-4 h-4 text-success" />
-                      Verified Owner
+                      Verified Listing
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-3 mb-6">
-                  <Button variant="accent" size="lg" className="w-full gap-2">
+                  <Button variant="accent" size="lg" className="w-full gap-2 h-12 rounded-xl font-bold shadow-lg shadow-accent/20">
                     <Phone className="w-4 h-4" />
                     Contact Owner
                   </Button>
-                  <Button variant="outline" size="lg" className="w-full gap-2">
+                  <Button variant="secondary" size="lg" className="w-full gap-2 h-12 rounded-xl font-bold">
                     <MessageCircle className="w-4 h-4" />
                     Send Message
                   </Button>
                 </div>
 
                 <div className="pt-4 border-t border-border">
-                  <p className="text-xs text-muted-foreground text-center">
-                    You'll need to unlock contacts to view owner details
+                  <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                    Zero Brokerage platform. You'll need to unlock contact details to connect directly.
                   </p>
                 </div>
               </div>
 
               {/* Stats Card */}
-              <div className="bg-card rounded-xl border border-border p-6">
-                <h3 className="font-semibold text-foreground mb-4">Listing Statistics</h3>
-                <div className="space-y-3">
+              <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                <h3 className="font-bold text-foreground mb-5 text-sm uppercase tracking-wider">Listing Insights</h3>
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-muted-foreground">
+                    <span className="flex items-center gap-2.5 text-muted-foreground text-sm">
                       <Eye className="w-4 h-4" />
-                      Views
+                      Total Views
                     </span>
-                    <span className="font-semibold text-foreground">{property.views}</span>
+                    <span className="font-bold text-foreground text-sm">{property.views.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-muted-foreground">
+                    <span className="flex items-center gap-2.5 text-muted-foreground text-sm">
                       <Users className="w-4 h-4" />
-                      Leads
+                      Inquiries
                     </span>
-                    <span className="font-semibold text-foreground">{property.leads}</span>
+                    <span className="font-bold text-foreground text-sm">{property.leads.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-muted-foreground">
+                    <span className="flex items-center gap-2.5 text-muted-foreground text-sm">
                       <Calendar className="w-4 h-4" />
-                      Available From
+                      Available
                     </span>
-                    <span className="font-semibold text-foreground">
+                    <span className="font-bold text-foreground text-sm">
                       {new Date(property.availableFrom).toLocaleDateString('en-IN', {
                         day: 'numeric',
                         month: 'short',
-                        year: 'numeric',
                       })}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-muted-foreground">
+                    <span className="flex items-center gap-2.5 text-muted-foreground text-sm">
                       <Clock className="w-4 h-4" />
-                      Posted
+                      Posted On
                     </span>
-                    <span className="font-semibold text-foreground">
+                    <span className="font-bold text-foreground text-sm">
                       {new Date(property.createdAt).toLocaleDateString('en-IN', {
                         day: 'numeric',
                         month: 'short',
@@ -489,12 +515,13 @@ export default function PropertyDetail() {
               </div>
 
               {/* Zero Brokerage Banner */}
-              <div className="bg-success/10 rounded-xl border border-success/20 p-6 text-center">
-                <Badge variant="zeroBrokerage" className="mb-3">
+              <div className="bg-gradient-to-br from-success/5 to-success/10 rounded-2xl border border-success/20 p-6 text-center shadow-sm">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-success text-success-foreground text-[10px] font-black uppercase tracking-widest mb-4">
+                  <ShieldCheck className="w-3 h-3" />
                   Zero Brokerage
-                </Badge>
-                <p className="text-sm text-foreground">
-                  Connect directly with the owner and save on brokerage fees!
+                </div>
+                <p className="text-sm font-medium text-foreground leading-relaxed">
+                  Direct connection with owners. Save up to 1 month's rent in brokerage!
                 </p>
               </div>
             </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Star, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const testimonials = [
   {
@@ -54,85 +55,99 @@ export function TestimonialsSection() {
   };
 
   return (
-    <section className="py-16 lg:py-24 bg-secondary/30">
+    <section className="mobile-optimized-spacing bg-secondary/30 overflow-hidden">
       <div className="container mx-auto px-4">
         {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="text-3xl lg:text-4xl font-display font-bold text-foreground">
+        <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-16">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-foreground">
             Loved by 50 Lakh+ Customers
           </h2>
-          <p className="text-muted-foreground mt-3">
+          <p className="text-sm sm:text-base text-muted-foreground mt-4 leading-relaxed">
             Don't just take our word for it. Here's what our customers have to say.
           </p>
         </div>
 
         {/* Testimonial Carousel */}
         <div className="relative max-w-4xl mx-auto">
+          {/* Desktop Navigation Buttons */}
+          <div className="absolute top-1/2 -left-4 lg:-left-20 -translate-y-1/2 z-10 hidden sm:block">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={prev}
+              className="w-12 h-12 rounded-full bg-background/80 backdrop-blur-sm shadow-lg hover:bg-background transition-all"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </Button>
+          </div>
+          <div className="absolute top-1/2 -right-4 lg:-right-20 -translate-y-1/2 z-10 hidden sm:block">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={next}
+              className="w-12 h-12 rounded-full bg-background/80 backdrop-blur-sm shadow-lg hover:bg-background transition-all"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </Button>
+          </div>
+
           <AnimatePresence mode="wait">
             <motion.div
               key={currentIndex}
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              transition={{ duration: 0.3 }}
-              className="bg-card rounded-2xl p-8 lg:p-12 shadow-lg border border-border"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.05 }}
+              transition={{ duration: 0.4 }}
+              className="bg-card rounded-3xl p-6 sm:p-10 lg:p-14 shadow-xl border border-border/50 relative overflow-hidden"
             >
-              <Quote className="w-12 h-12 text-accent/20 mb-6" />
-              <p className="text-lg lg:text-xl text-foreground leading-relaxed mb-8">
-                "{testimonials[currentIndex].text}"
-              </p>
-              <div className="flex items-center gap-4">
-                <img
-                  src={testimonials[currentIndex].image}
-                  alt={testimonials[currentIndex].name}
-                  className="w-14 h-14 rounded-full object-cover"
-                />
-                <div>
-                  <h4 className="font-semibold text-foreground">
-                    {testimonials[currentIndex].name}
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
-                    {testimonials[currentIndex].role} • {testimonials[currentIndex].location}
-                  </p>
-                  <div className="flex gap-0.5 mt-1">
-                    {Array.from({ length: testimonials[currentIndex].rating }).map((_, i) => (
-                      <Star key={i} className="w-4 h-4 fill-warning text-warning" />
-                    ))}
+              {/* Decoration */}
+              <Quote className="absolute top-6 right-6 sm:top-10 sm:right-10 w-16 h-16 sm:w-24 sm:h-24 text-accent/5 pointer-events-none" />
+              
+              <div className="relative z-10">
+                <div className="flex gap-1 mb-6 sm:mb-8 justify-center sm:justify-start">
+                  {Array.from({ length: testimonials[currentIndex].rating }).map((_, i) => (
+                    <Star key={i} className="w-5 h-5 sm:w-6 sm:h-6 fill-warning text-warning" />
+                  ))}
+                </div>
+
+                <p className="text-lg sm:text-xl lg:text-2xl text-foreground leading-relaxed mb-8 sm:mb-10 font-medium italic text-center sm:text-left">
+                  "{testimonials[currentIndex].text}"
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5 border-t border-border/50 pt-8 sm:pt-10">
+                  <img
+                    src={testimonials[currentIndex].image}
+                    alt={testimonials[currentIndex].name}
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-4 ring-accent/10"
+                  />
+                  <div className="text-center sm:text-left">
+                    <h4 className="font-bold text-lg sm:text-xl text-foreground">
+                      {testimonials[currentIndex].name}
+                    </h4>
+                    <p className="text-sm sm:text-base text-muted-foreground font-medium">
+                      {testimonials[currentIndex].role} <span className="hidden sm:inline mx-1">•</span> <br className="sm:hidden" /> {testimonials[currentIndex].location}
+                    </p>
                   </div>
                 </div>
               </div>
             </motion.div>
           </AnimatePresence>
 
-          {/* Navigation */}
-          <div className="flex items-center justify-center gap-4 mt-8">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={prev}
-              className="rounded-full"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <div className="flex gap-2">
-              {testimonials.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentIndex(index)}
-                  className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                    index === currentIndex ? 'bg-accent' : 'bg-muted-foreground/30'
-                  }`}
-                />
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={next}
-              className="rounded-full"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
+          {/* Navigation Dots (Always visible for mobile, desktop can use buttons or dots) */}
+          <div className="flex justify-center gap-3 mt-8">
+            {testimonials.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentIndex(index)}
+                className={cn(
+                  "w-2.5 h-2.5 rounded-full transition-all duration-300",
+                  currentIndex === index 
+                    ? "bg-accent w-8" 
+                    : "bg-accent/20"
+                )}
+                aria-label={`Go to testimonial ${index + 1}`}
+              />
+            ))}
           </div>
         </div>
       </div>
