@@ -598,9 +598,9 @@ export default function Properties() {
                   : 'space-y-4'
               )}
             >
-              {filteredProperties.map((property) => (
+              {filteredProperties.map((property, index) => (
                 <PropertyCard
-                  key={property.id}
+                  key={`${property.id}-${index}`}
                   property={property}
                   variant={viewMode === 'list' ? 'horizontal' : 'default'}
                 />

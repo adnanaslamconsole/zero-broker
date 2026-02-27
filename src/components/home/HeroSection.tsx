@@ -56,6 +56,7 @@ export function HeroSection() {
     <section className="relative min-h-[80vh] lg:min-h-[85vh] flex items-center bg-background hero-pattern overflow-hidden">
       {/* Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {/* Desktop Video Background */}
         <div className="absolute inset-0 hidden md:block">
           <iframe
             className="w-full h-full object-cover scale-110 opacity-60"
@@ -64,7 +65,17 @@ export function HeroSection() {
             allow="autoplay; fullscreen; picture-in-picture"
           />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-background md:from-black/70" />
+
+        {/* Mobile Static Background */}
+        <div className="absolute inset-0 md:hidden">
+          <img 
+            src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=2070" 
+            alt="Luxury Home" 
+            className="w-full h-full object-cover opacity-40"
+          />
+        </div>
+
+        <div className="absolute inset-0 bg-gradient-to-b from-black/90 via-black/70 to-background md:from-black/70" />
         <div className="absolute top-20 left-10 w-48 h-48 sm:w-72 sm:h-72 bg-primary/20 rounded-full blur-3xl" />
         <div className="absolute bottom-20 right-10 w-64 h-64 sm:w-96 sm:h-96 bg-accent/20 rounded-full blur-3xl" />
       </div>

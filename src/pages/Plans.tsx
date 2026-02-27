@@ -47,7 +47,7 @@ export default function Plans() {
   const { data: subscription } = useQuery({
     queryKey: ['user-subscription', user?.profile?.id],
     queryFn: async () => {
-      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') return null;
+      if (!user || user.profile.isDemo) return null;
       const { data, error } = await supabase
         .from('user_subscriptions')
         .select('*')
@@ -56,7 +56,7 @@ export default function Plans() {
       if (error && error.code !== 'PGRST116') throw error;
       return (data as UserSubscription) || null;
     },
-    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
+    enabled: !!user && !user.profile.isDemo,
   });
 
   const subscribeMutation = useMutation({
@@ -64,7 +64,7 @@ export default function Plans() {
       if (!user) throw new Error('Please login to subscribe');
       
       // Handle demo user
-      if (user.profile.id === '00000000-0000-0000-0000-000000000000') {
+      if (user.profile.isDemo) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         return;
       }
@@ -86,7 +86,7 @@ export default function Plans() {
       }
     },
     onSuccess: () => {
-      if (user?.profile.id !== '00000000-0000-0000-0000-000000000000') {
+      if (!user?.profile.isDemo) {
         queryClient.invalidateQueries({ queryKey: ['user-subscription'] });
       }
       toast.success('Your plan has been updated');

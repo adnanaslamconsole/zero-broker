@@ -30,6 +30,8 @@ export interface UserProfile {
   kycDocuments: KycDocument[];
   trustScore: number;
   isBlocked: boolean;
+  isPaid?: boolean;
+  isDemo?: boolean;
   lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;

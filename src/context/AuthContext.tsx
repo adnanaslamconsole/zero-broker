@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { supabase } from '@/lib/supabase';
 import type { UserAccountSnapshot, UserProfile } from '@/types/user';
 import { toast } from 'sonner';
+import { offlineStorage } from '@/lib/offlineStorage';
 
 interface AuthContextValue {
   user: UserAccountSnapshot | null;
@@ -76,6 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           favorites: [], // Fetch separately
           recentActivity: [], // Fetch separately
         });
+
+        // Sync offline draft if exists
+        offlineStorage.syncDraftWithUser(profile.id);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -159,9 +163,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isDemoUser && token === '123456') {
         await new Promise(resolve => setTimeout(resolve, 1000));
         
+        // Use different ID for paid demo owner to avoid seeing seeded public properties as their own
+        const demoUserId = identifier === 'paid-owner@demo.com' 
+          ? 'd0000000-0000-0000-0000-000000000001' 
+          : '00000000-0000-0000-0000-000000000000';
+
         // Mock profile data directly to avoid RLS issues without session
         const mockProfile: UserProfile = {
-          id: '00000000-0000-0000-0000-000000000000',
+          id: demoUserId,
           name: identifier === 'paid-owner@demo.com' ? 'Paid Demo Owner' : 'ZeroBroker Partner',
           email: type === 'email' ? identifier : undefined,
           mobile: type === 'phone' ? identifier : undefined,
@@ -172,8 +181,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           kycDocuments: [],
           trustScore: 100,
           isBlocked: false,
+          isDemo: true, // Mark as demo user
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          isPaid: identifier === 'paid-owner@demo.com' // Explicitly set paid status
         };
 
         // If specific name/role provided during login, use them for demo
@@ -183,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            mockProfile.name = meta.name || mockProfile.name;
            mockProfile.primaryRole = meta.role || mockProfile.primaryRole;
            mockProfile.roles = [meta.role || 'tenant'];
+           if (meta.isPaid) mockProfile.isPaid = true;
         }
 
         setUser({
@@ -191,6 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           favorites: [],
           recentActivity: [],
         });
+        
+        // Sync offline draft for demo user
+        offlineStorage.syncDraftWithUser(mockProfile.id);
         
         toast.success('Logged in successfully (Demo Mode)!');
         localStorage.removeItem('demo_user_meta');

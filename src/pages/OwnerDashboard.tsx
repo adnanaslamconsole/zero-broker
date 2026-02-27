@@ -4,21 +4,61 @@ import { Footer } from '@/components/layout/Footer';
 import { listProperties, updatePropertyListing } from '@/lib/mockApi';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 
 export default function OwnerDashboard() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { data } = useQuery({
-    queryKey: ['owner-properties'],
-    queryFn: listProperties,
+  
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-properties', user?.profile?.id],
+    queryFn: async () => {
+      if (!user) return [];
+
+      // Fetch from Supabase for all logged in users
+      const { data: properties, error } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('owner_id', user.profile.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching owner properties:', error);
+        // Fallback to mock for non-demo users if needed, 
+        // but for demo user we definitely want their real posts.
+        if (!user.profile.isDemo) {
+          return listProperties();
+        }
+        return [];
+      }
+
+      return properties || [];
+    },
+    enabled: !!user,
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: { id: string; isActive: boolean }) =>
-      updatePropertyListing(payload.id, { isActive: payload.isActive }),
+    mutationFn: async (payload: { id: string; isActive: boolean }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('properties')
+        .update({ is_available: payload.isActive })
+        .eq('id', payload.id)
+        .eq('owner_id', user.profile.id);
+
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['owner-properties'] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      toast.success('Property status updated');
     },
+    onError: (error: any) => {
+      toast.error('Failed to update property: ' + error.message);
+    }
   });
 
   return (

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap } from 'lucide-react';
+import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap, Heart } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +19,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [demoAvatarUrl, setDemoAvatarUrl] = useState<string | null>(null);
 
   const handleLogout = async () => {
     await logout();
@@ -32,8 +33,8 @@ export default function Profile() {
   // Initialize edit state when user loads
   useEffect(() => {
     if (user) {
-      setEditName(user.profile.name);
-      setEditMobile(user.profile.mobile);
+      setEditName(user.profile.name || '');
+      setEditMobile(user.profile.mobile || '');
     }
   }, [user]);
 
@@ -42,7 +43,7 @@ export default function Profile() {
       if (!user) throw new Error('Not authenticated');
       
       // Handle demo user
-      if (user.profile.id === '00000000-0000-0000-0000-000000000000') {
+      if (user.profile.isDemo) {
         await new Promise(resolve => setTimeout(resolve, 800));
         return;
       }
@@ -57,7 +58,15 @@ export default function Profile() {
     onSuccess: () => {
       toast.success('Profile updated successfully');
       setIsEditing(false);
-      window.location.reload();
+      
+      // Update local demo name/mobile if it's a demo user
+      if (user?.profile.isDemo) {
+        // No reload for demo users
+        return;
+      }
+      
+      // For real users, we avoid full reload which can reset session state
+      // window.location.reload(); 
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to update profile');
@@ -72,7 +81,7 @@ export default function Profile() {
   const { data: bookings, isLoading: bookingsLoading } = useQuery({
     queryKey: ['my-bookings'],
     queryFn: async () => {
-      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') return [];
+      if (!user || user.profile.isDemo) return [];
       const { data, error } = await supabase
         .from('service_bookings')
         .select('*, services(name, image_url)')
@@ -82,18 +91,32 @@ export default function Profile() {
       if (error) throw error;
       return data;
     },
-    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
+    enabled: !!user && !user.profile.isDemo,
   });
 
-  // Fetch subscription & property stats
-  const { data: subscriptionInfo } = useQuery({
-    queryKey: ['profile-subscription', user?.profile.id],
+  const { data: subscriptionInfo, isLoading: isLoadingSubscription } = useQuery({
+    queryKey: ['subscription-limits', user?.profile.id, user?.profile.isPaid],
     queryFn: async () => {
-      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') {
-        return {
-          plan: null,
-          used: 0
-        };
+      if (!user) return { plan: null, used: 0 };
+
+      // Handle demo user stats
+      if (user.profile.isDemo) {
+        if (user.profile.isPaid) {
+          const { count } = await supabase
+            .from('properties')
+            .select('*', { count: 'exact', head: true })
+            .eq('owner_id', user.profile.id);
+
+          return {
+            plan: {
+              name: 'Plus',
+              max_listings: 10,
+              price_monthly: 999
+            },
+            used: count || 0
+          };
+        }
+        return { plan: null, used: 0 };
       }
       
       const { data: sub } = await supabase
@@ -116,10 +139,44 @@ export default function Profile() {
     enabled: !!user,
   });
 
+  // Fetch real counts for stats grid
+  const { data: extraStats } = useQuery({
+    queryKey: ['profile-extra-stats', user?.profile.id],
+    queryFn: async () => {
+      if (!user) return { reviews: 0, saved: 0 };
+
+      // In a real app, these would be real queries
+      // For now, we'll try to fetch if they exist, or return 0
+      const [reviewsRes, savedRes] = await Promise.all([
+        supabase.from('property_reviews').select('*', { count: 'exact', head: true }).eq('user_id', user.profile.id),
+        supabase.from('saved_properties').select('*', { count: 'exact', head: true }).eq('user_id', user.profile.id)
+      ]);
+
+      return {
+        reviews: reviewsRes.count || 0,
+        saved: savedRes.count || 0
+      };
+    },
+    enabled: !!user,
+  });
+
   const uploadAvatarMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!user) throw new Error('Not authenticated');
       
+      // Handle demo user
+      if (user.profile.isDemo) {
+        // Mock upload delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Create a local object URL for the demo user to see their "uploaded" photo
+        const localUrl = URL.createObjectURL(file);
+        
+        // We can't easily update the global user state from here without a complex flow,
+        // so we'll just show a success message for the demo experience.
+        return localUrl;
+      }
+
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.profile.id}-${Math.random()}.${fileExt}`;
       const filePath = `${user.profile.id}/${fileName}`;
@@ -144,12 +201,33 @@ export default function Profile() {
 
       if (updateError) throw updateError;
       
+      // Update local state instead of reloading
+      const updatedUser = {
+        ...user,
+        profile: {
+          ...user.profile,
+          avatarUrl: publicUrl
+        }
+      };
+      // We can't directly call setUser as it's not exported, 
+      // but we can at least avoid the reload and set our local demo state if needed.
+      // For real users, the next profile fetch or page visit will show the change.
+      
       return publicUrl;
     },
-    onSuccess: () => {
+    onSuccess: (url) => {
       toast.success('Profile photo updated');
-      // Force reload or invalidate query to refresh user context if needed
-      window.location.reload(); 
+      
+      // For demo users, we update the local demoAvatarUrl state
+      if (user?.profile.isDemo) {
+        setDemoAvatarUrl(url);
+        toast.info('Demo Mode: Photo update is temporary');
+        return;
+      }
+      
+      // For real users, we avoid window.location.reload() which can cause logout if session is flaky
+      // Instead, we'll just update the local UI or trust the next navigation
+      // toast.info('Refresh to see changes across all pages');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to upload photo');
@@ -209,7 +287,9 @@ export default function Profile() {
               <div className="relative flex flex-col items-center text-center mb-6 mt-4">
                 <div className="relative mb-4">
                   <div className="w-28 h-28 rounded-full border-4 border-background shadow-2xl overflow-hidden bg-secondary flex items-center justify-center relative group/avatar">
-                    {user.profile.avatarUrl ? (
+                    {demoAvatarUrl ? (
+                      <img src={demoAvatarUrl} alt={user.profile.name} className="w-full h-full object-cover" />
+                    ) : user.profile.avatarUrl ? (
                       <img src={user.profile.avatarUrl} alt={user.profile.name} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-4xl font-bold text-muted-foreground">
@@ -320,11 +400,11 @@ export default function Profile() {
             {/* Stats Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: 'Bookings', value: bookings?.length || 0, icon: Calendar },
-                { label: 'Properties', value: subscriptionInfo?.used || 0, icon: MapPin },
-                { label: 'Reviews', value: 0, icon: CheckCircle2 }, // Placeholder
-                { label: 'Saved', value: 12, icon: User }, // Placeholder
-              ].map((stat, i) => (
+              { label: 'Bookings', value: bookings?.length || 0, icon: Calendar },
+              { label: 'Properties', value: subscriptionInfo?.used || 0, icon: MapPin },
+              { label: 'Reviews', value: extraStats?.reviews || 0, icon: CheckCircle2 },
+              { label: 'Saved', value: extraStats?.saved || 0, icon: Heart },
+            ].map((stat, i) => (
                 <div key={i} className="bg-card/50 border border-border/50 rounded-xl p-4 flex flex-col items-center justify-center text-center hover:bg-card/80 transition-colors cursor-pointer group">
                   <stat.icon className="w-6 h-6 text-muted-foreground mb-2 group-hover:text-primary transition-colors" />
                   <span className="text-2xl font-bold">{stat.value}</span>

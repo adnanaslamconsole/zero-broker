@@ -18,6 +18,10 @@ import {
   Wrench,
   Crown,
   MessageCircle,
+  LayoutDashboard,
+  Key,
+  CreditCard,
+  LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -87,7 +91,7 @@ export function Header() {
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['unread-notifications-count', user?.profile?.id],
     queryFn: async () => {
-      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') return 0;
+      if (!user || user.profile.isDemo) return 0;
       const { count, error } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
@@ -96,9 +100,17 @@ export function Header() {
       if (error) throw error;
       return count || 0;
     },
-    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
+    enabled: !!user && !user.profile.isDemo,
     refetchInterval: 30000, // Poll every 30s
   });
+
+  const mobileNavLinks = [
+    { label: 'Rent', href: '/properties?type=rent', icon: Building2 },
+    { label: 'Buy', href: '/properties?type=sale', icon: Home },
+    { label: 'Services', href: '/services', icon: Wrench },
+    { label: 'Plans', href: '/plans', icon: Crown },
+    { label: 'ZeroBrokerHood', href: '/society', icon: Building },
+  ];
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-lg border-b border-border shadow-sm">
@@ -209,6 +221,16 @@ export function Header() {
 
           {/* Mobile Actions (Visible on small screens) */}
           <div className="flex lg:hidden items-center gap-1 sm:gap-2">
+            {!user && (
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 px-3 text-[10px] font-bold uppercase tracking-wider shadow-sm mr-1"
+                onClick={() => navigate('/login')}
+              >
+                Login/Signup
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -317,12 +339,33 @@ export function Header() {
               <div className="px-4 py-2 bg-primary/10 rounded-lg text-sm font-medium text-primary mb-4">
                 Navigation Menu
               </div>
+              
+              {/* Quick Access Section */}
+              <div>
+                <h4 className="px-4 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-3">Quick Access</h4>
+                <div className="grid grid-cols-1 gap-1">
+                  {mobileNavLinks.map((link) => (
+                    <Link
+                      key={link.label}
+                      to={link.href}
+                      className="flex items-center gap-4 px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-card border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/5 transition-colors">
+                        <link.icon className="w-5 h-5" />
+                      </div>
+                      <span>{link.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
               {/* Core Services Section */}
               {navLinks.length > 0 && (
                 <div>
-                  <h4 className="px-4 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-3">Core Services</h4>
+                  <h4 className="px-4 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-3">All Categories</h4>
                   <div className="grid grid-cols-1 gap-1">
-                    {navLinks.filter(link => !['Plans', 'ZeroBrokerHood'].includes(link.label)).map((link) => (
+                    {navLinks.map((link) => (
                       <div key={link.label} className="space-y-1">
                         <button
                           className="flex items-center justify-between w-full px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
@@ -373,22 +416,59 @@ export function Header() {
                 </div>
               )}
 
-              {/* Account & Support Section */}
-              <div>
-                <h4 className="px-4 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-3">Account & Support</h4>
-                <div className="grid grid-cols-1 gap-1">
-                  {!user && (
+              {/* User Dashboard Section (Logged In) */}
+              {user && (
+                <div>
+                  <h4 className="px-4 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-3">User Dashboard</h4>
+                  <div className="grid grid-cols-1 gap-1">
                     <Link
-                      to="/login"
+                      to={isAdmin ? "/admin" : "/owner/dashboard"}
                       className="flex items-center gap-4 px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       <div className="w-9 h-9 rounded-xl bg-card border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/5 transition-colors">
-                        <User className="w-5 h-5" />
+                        <LayoutDashboard className="w-5 h-5" />
                       </div>
-                      <span>Login / Register</span>
+                      <span>{isAdmin ? "Admin Dashboard" : "Owner Dashboard"}</span>
                     </Link>
-                  )}
+                    <Link
+                      to="/post-property"
+                      className="flex items-center gap-4 px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-card border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/5 transition-colors">
+                        <Plus className="w-5 h-5" />
+                      </div>
+                      <span>Post Property</span>
+                    </Link>
+                    <Link
+                      to="/payments"
+                      className="flex items-center gap-4 px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-card border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/5 transition-colors">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <span>My Payments</span>
+                    </Link>
+                    <Link
+                      to="/agreements"
+                      className="flex items-center gap-4 px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-card border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/5 transition-colors">
+                        <Key className="w-5 h-5" />
+                      </div>
+                      <span>My Agreements</span>
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {/* Account & Support Section */}
+              <div>
+                <h4 className="px-4 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-3">Account & Support</h4>
+                <div className="grid grid-cols-1 gap-1">
                   <Link
                     to="/plans"
                     className="flex items-center gap-4 px-4 py-3.5 text-foreground font-semibold rounded-2xl hover:bg-secondary/70 transition-all group"
@@ -457,6 +537,21 @@ export function Header() {
                       </div>
                       <span>Admin Dashboard</span>
                     </Link>
+                  )}
+                  {user && (
+                    <button
+                      onClick={async () => {
+                        await supabase.auth.signOut();
+                        setIsMobileMenuOpen(false);
+                        navigate('/');
+                      }}
+                      className="flex items-center gap-4 px-4 py-3.5 text-destructive font-semibold rounded-2xl hover:bg-destructive/5 transition-all group"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-card border border-border/50 flex items-center justify-center text-muted-foreground group-hover:text-destructive group-hover:bg-destructive/5 transition-colors">
+                        <LogOut className="w-5 h-5" />
+                      </div>
+                      <span>Logout</span>
+                    </button>
                   )}
                 </div>
               </div>

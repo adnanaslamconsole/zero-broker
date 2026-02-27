@@ -16,7 +16,7 @@ import {
   AlertCircle,
   Crown
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -45,6 +45,8 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { LocationSearch } from '@/components/property/LocationSearch';
+
+import { offlineStorage } from '@/lib/offlineStorage';
 
 // Form Schema
 const propertySchema = z.object({
@@ -81,6 +83,7 @@ const steps = [
 export default function PostProperty() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
@@ -88,11 +91,85 @@ export default function PostProperty() {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
 
+  const form = useForm<PropertyFormValues>({
+    resolver: zodResolver(propertySchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      type: 'rent',
+      property_category: 'apartment',
+      price: '',
+      city: '',
+      locality: '',
+      address: '',
+      bedrooms: 2,
+      bathrooms: 2,
+      area: '',
+      furnishing_status: 'semi-furnished',
+      amenities: [],
+    },
+    mode: 'onChange',
+  });
+
+  // Load draft on mount
+  useEffect(() => {
+    const draft = offlineStorage.getDraft();
+    if (draft && draft.data) {
+      // If a draft exists, check if user wants to restore it
+      const restoreDraft = () => {
+        form.reset(draft.data);
+        if (draft.data.step) setCurrentStep(draft.data.step);
+        toast.success('Draft restored', {
+          description: 'We found an unsaved property listing and restored it for you.'
+        });
+      };
+
+      // Auto-restore for now, or could show a prompt
+      restoreDraft();
+    }
+  }, []);
+
+  // Auto-save draft on form changes
+  useEffect(() => {
+    const subscription = form.watch((value) => {
+      offlineStorage.saveDraft({ ...value, step: currentStep }, user?.profile.id);
+    });
+    return () => subscription.unsubscribe();
+  }, [form.watch, currentStep, user]);
+
   // Fetch subscription & limits
   const { data: subscriptionInfo, isLoading: isLoadingSubscription } = useQuery({
-    queryKey: ['subscription-limits', user?.profile.id],
+    queryKey: ['subscription-limits', user?.profile.id, user?.profile.isPaid],
     queryFn: async () => {
-      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') {
+      if (!user) {
+        return {
+          plan: null,
+          used: 0,
+          remaining: 0
+        };
+      }
+
+      // Handle demo user
+      if (user.profile.isDemo) {
+        // If it's the paid demo owner, mock a Plus plan
+        if (user.profile.isPaid) {
+          // Count real properties for demo user to show correct usage
+          const { count } = await supabase
+            .from('properties')
+            .select('*', { count: 'exact', head: true })
+            .eq('owner_id', user.profile.id)
+            .neq('status', 'archived');
+
+          return {
+            plan: {
+              name: 'Plus',
+              max_listings: 10,
+              price: 999
+            },
+            used: count || 0,
+            remaining: Math.max(0, 10 - (count || 0))
+          };
+        }
         return {
           plan: null,
           used: 0,
@@ -121,33 +198,13 @@ export default function PostProperty() {
         remaining: sub?.pricing_plans ? (sub.pricing_plans.max_listings - (count || 0)) : 0
       };
     },
-    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
+    enabled: !!user,
   });
 
   const maxListings = subscriptionInfo?.plan?.max_listings || 0;
   const usedListings = subscriptionInfo?.used || 0;
   const isLimitReached = !!user && maxListings > 0 && usedListings >= maxListings;
   const hasNoPlan = !!user && !isLoadingSubscription && !subscriptionInfo?.plan;
-
-  const form = useForm<PropertyFormValues>({
-    resolver: zodResolver(propertySchema),
-    defaultValues: {
-      title: '',
-      description: '',
-      type: 'rent',
-      property_category: 'apartment',
-      price: '',
-      city: '',
-      locality: '',
-      address: '',
-      bedrooms: 2,
-      bathrooms: 2,
-      area: '',
-      furnishing_status: 'semi-furnished',
-      amenities: [],
-    },
-    mode: 'onChange',
-  });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -170,7 +227,7 @@ export default function PostProperty() {
     if (uploadedImages.length === 0) return [];
     
     // Bypass for demo user
-    if (user?.profile.id === '00000000-0000-0000-0000-000000000000') {
+    if (user?.profile.isDemo) {
       return imageUrls; // Return local preview URLs for demo
     }
 
@@ -212,18 +269,34 @@ export default function PostProperty() {
       return;
     }
 
+    // Validation for photos in the final step
+    if (uploadedImages.length === 0 && !user.profile.isDemo) {
+      toast.error('Please upload at least one property photo');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
+      console.log('Starting submission for user:', user.profile.id);
       const uploadedUrls = await uploadImagesToStorage();
+      console.log('Images uploaded:', uploadedUrls);
 
-      // Handle demo user submission
-      if (user.profile.id === '00000000-0000-0000-0000-000000000000') {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+      // Handle non-paid demo user submission (mock only)
+      if (user.profile.isDemo && !user.profile.isPaid) {
+        console.log('Free demo user submission detected');
+        await new Promise(resolve => setTimeout(resolve, 2000));
         toast.success('Demo Property posted successfully!');
-        navigate('/properties');
+        
+        // Use a small delay before navigation to ensure toast is visible
+        setTimeout(() => {
+          navigate('/properties');
+        }, 500);
         return;
       }
+
+      // Paid demo user (paid-owner@demo.com) will proceed to real insert
+      console.log('Proceeding with real insert for user:', user.profile.id);
 
       const { error } = await supabase.from('properties').insert({
         owner_id: user.profile.id,
@@ -237,7 +310,7 @@ export default function PostProperty() {
         address: data.address,
         bedrooms: data.bedrooms,
         bathrooms: data.bathrooms,
-        area: Number(data.area),
+        area: Math.round(Number(data.area)), // Rounding to integer for DB compatibility
         furnishing_status: data.furnishing_status,
         amenities: data.amenities || [],
         images: uploadedUrls,
@@ -248,9 +321,19 @@ export default function PostProperty() {
         longitude: selectedLocation?.lon,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase insert error:', error);
+        throw new Error(`Failed to post property: ${error.message} (Code: ${error.code})`);
+      }
 
       toast.success('Property posted successfully!');
+      
+      // Invalidate queries to update property counts
+      queryClient.invalidateQueries({ queryKey: ['subscription-limits'] });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['owner-properties'] });
+
+      offlineStorage.clearDraft(); // Clear draft after successful post
       navigate('/properties');
     } catch (error) {
       const err = error as Error;
@@ -270,7 +353,13 @@ export default function PostProperty() {
 
     const isValid = await form.trigger(fieldsToValidate);
     if (isValid) {
+      console.log('Step', currentStep, 'validated. Moving to next.');
       setCurrentStep(prev => prev + 1);
+      // Scroll to top of form
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      console.error('Validation failed for fields:', fieldsToValidate);
+      toast.error('Please fix the errors before continuing');
     }
   };
 

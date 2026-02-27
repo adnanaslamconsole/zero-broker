@@ -25,7 +25,7 @@ export default function Notifications() {
   const { data: notifications, isLoading } = useQuery({
     queryKey: ['notifications', user?.profile?.id],
     queryFn: async () => {
-      if (!user || user.profile.id === '00000000-0000-0000-0000-000000000000') return [];
+      if (!user || user.profile.isDemo) return [];
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -35,7 +35,7 @@ export default function Notifications() {
       if (error) throw error;
       return data as Notification[];
     },
-    enabled: !!user && user.profile.id !== '00000000-0000-0000-0000-000000000000',
+    enabled: !!user && !user.profile.isDemo,
   });
 
   const markAsReadMutation = useMutation({
