@@ -79,12 +79,12 @@ BEGIN
     -- The user wants nearby first, then distant. So we sort by distance.
   )
   SELECT 
-    fbr.id, fbr.title, fbr.description, fbr.type, fbr.property_category, fbr.price, 
-    fbr.city, fbr.locality, fbr.address, fbr.bedrooms, fbr.bathrooms, fbr.area, 
-    fbr.furnishing_status, fbr.amenities, fbr.images, fbr.latitude::double precision, fbr.longitude::double precision, 
+    fbr.id, fbr.title, fbr.description, fbr.type, fbr.property_category, fbr.price::NUMERIC, 
+    fbr.city, fbr.locality, fbr.address, fbr.bedrooms::INT, fbr.bathrooms::INT, fbr.area::NUMERIC, 
+    fbr.furnishing_status, fbr.amenities, fbr.images, fbr.latitude::DOUBLE PRECISION, fbr.longitude::DOUBLE PRECISION, 
     fbr.is_verified, fbr.is_available, fbr.owner_id, fbr.created_at, fbr.updated_at,
-    fbr.distance,
-    fbr.full_count
+    fbr.distance::DOUBLE PRECISION,
+    fbr.full_count::BIGINT
   FROM filtered_by_radius fbr
   ORDER BY 
     CASE WHEN p_sort_by = 'relevance' THEN fbr.distance END ASC,

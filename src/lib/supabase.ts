@@ -12,5 +12,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     storage: window.localStorage,
     storageKey: 'zerobroker-auth-session',
-  }
+  },
+  global: {
+    headers: {
+      'apikey': supabaseAnonKey,
+    },
+  },
 });

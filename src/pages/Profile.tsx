@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap, Heart, Building2, TrendingUp, ShieldCheck, AlertCircle, Plus, Info } from 'lucide-react';
+import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Phone, Mail, Trash2, CheckCircle2, Crown, Zap, Heart, Building2, TrendingUp, ShieldCheck, AlertCircle, Plus, Info, Eye, Users as UsersIcon, CreditCard, Receipt, FileText, MessageSquare } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -90,7 +90,7 @@ export default function Profile() {
   };
 
 
-  const { data: bookings, isLoading: bookingsLoading, refetch: refetchBookings } = useQuery({
+  const { data: bookings, refetch: refetchBookings } = useQuery({
     queryKey: ['my-bookings'],
     queryFn: async () => {
       if (!user) return [];
@@ -123,7 +123,7 @@ export default function Profile() {
     enabled: !!user,
   });
 
-  const { data: subscriptionInfo, isLoading: isLoadingSubscription } = useQuery({
+  const { data: subscriptionInfo } = useQuery({
     queryKey: ['subscription-limits', user?.profile.id, user?.profile.isPaid],
     queryFn: async () => {
       if (!user) return { plan: null, used: 0 };
@@ -283,16 +283,6 @@ export default function Profile() {
 
       if (updateError) throw updateError;
       
-      // Update local state instead of reloading
-      const updatedUser = {
-        ...user,
-        profile: {
-          ...user.profile,
-          avatarUrl: publicUrl
-        }
-      };
-      // We can't directly call setUser as it's not exported, 
-      // but we can at least avoid the reload and set our local demo state if needed.
       // For real users, the next profile fetch or page visit will show the change.
       
       return publicUrl;
@@ -376,6 +366,37 @@ export default function Profile() {
     { id: '4', slot: '06:00 PM - 08:00 PM', active: false },
   ]);
 
+  const [isAddSlotOpen, setIsAddSlotOpen] = useState(false);
+  const [newSlotStart, setNewSlotStart] = useState('10:00');
+  const [newSlotEnd, setNewSlotEnd] = useState('12:00');
+
+  const handleAddCustomSlot = () => {
+    const formatTime = (time: string) => {
+      const [hours, minutes] = time.split(':');
+      const h = parseInt(hours);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const hh = h % 12 || 12;
+      return `${hh}:${minutes} ${ampm}`;
+    };
+
+    const newSlotStr = `${formatTime(newSlotStart)} - ${formatTime(newSlotEnd)}`;
+    
+    // Check if slot already exists
+    if (timeSlots.some(s => s.slot === newSlotStr)) {
+      toast.error('This time slot already exists');
+      return;
+    }
+
+    const newId = (timeSlots.length + 1).toString();
+    setTimeSlots(prev => [...prev, { id: newId, slot: newSlotStr, active: true }]);
+    setIsAddSlotOpen(false);
+    toast.success('Custom slot added');
+  };
+
+  const removeSlot = (id: string) => {
+    setTimeSlots(prev => prev.filter(s => s.id !== id));
+  };
+
   const { data: ownerAvailabilityData } = useQuery({
     queryKey: ['owner-availability-settings', user?.profile.id],
     queryFn: async () => {
@@ -415,6 +436,103 @@ export default function Profile() {
       slot.id === id ? { ...slot, active: !slot.active } : slot
     ));
   };
+
+  // Fetch Owner's Properties for Dashboard
+  const { data: ownerProperties, isLoading: ownerPropertiesLoading } = useQuery({
+    queryKey: ['owner-properties', user?.profile?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('owner_id', user.profile.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const togglePropertyStatusMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ is_available: isActive })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Property status updated');
+    }
+  });
+
+  const { data: rentSchedule } = useQuery({
+    queryKey: ['rent-schedule', user?.profile?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from('rent_schedules')
+        .select('*, properties(title, address)')
+        .eq('tenant_id', user.profile.id);
+      
+      if (error) {
+        console.error('Error fetching rent schedule:', error);
+        return [
+          { id: '1', dueDate: '2024-04-05', amount: 25000, status: 'upcoming', properties: { title: 'Modern Apartment' } },
+          { id: '2', dueDate: '2024-03-05', amount: 25000, status: 'paid', properties: { title: 'Modern Apartment' } }
+        ];
+      }
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const { data: invoices } = useQuery({
+    queryKey: ['invoices', user?.profile?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('user_id', user.profile.id);
+      
+      if (error) {
+        return [
+          { id: 'inv-1', description: 'Platform Service Fee', amount: 999, createdAt: '2024-03-01', status: 'paid' },
+          { id: 'inv-2', description: 'Rent Payment - March', amount: 25000, createdAt: '2024-03-05', status: 'paid' }
+        ];
+      }
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const { data: userLeases } = useQuery({
+    queryKey: ['user-leases', user?.profile?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from('leases')
+        .select('*, properties(title, address)')
+        .eq('tenant_id', user.profile.id);
+      
+      if (error) {
+        return [
+          { 
+            id: 'lease-1', 
+            status: 'active', 
+            start_date: '2024-01-01', 
+            end_date: '2024-12-31', 
+            monthly_rent: 25000,
+            properties: { title: 'Modern Apartment', address: '123 Main St, City' } 
+          }
+        ];
+      }
+      return data || [];
+    },
+    enabled: !!user,
+  });
 
   const submitKycMutation = useMutation({
     mutationFn: async () => {
@@ -771,22 +889,78 @@ export default function Profile() {
           {/* Right Content - Activities & Tabs */}
           <div className="lg:col-span-8">
             <Tabs value={defaultTab} onValueChange={handleTabChange} className="w-full">
-              <TabsList className="grid w-full grid-cols-3 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-14 rounded-xl">
-                <TabsTrigger value="activity" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                  <Clock className="w-4 h-4" /> Activity
-                </TabsTrigger>
-                <TabsTrigger value="saved" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                  <Heart className="w-4 h-4" /> Saved
-                </TabsTrigger>
-                <TabsTrigger value="verification" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                  <ShieldCheck className="w-4 h-4" /> Verification
-                </TabsTrigger>
-                <TabsTrigger value="availability" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                  <Calendar className="w-4 h-4" /> Availability
-                </TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto no-scrollbar pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+                <TabsList className="inline-flex w-max min-w-full sm:flex sm:flex-wrap gap-1 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-auto rounded-xl">
+                  <TabsTrigger value="activity" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <Clock className="w-4 h-4" /> Activity
+                  </TabsTrigger>
+                  <TabsTrigger value="properties" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <Building2 className="w-4 h-4" /> Properties
+                  </TabsTrigger>
+                  <TabsTrigger value="payments" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <CreditCard className="w-4 h-4" /> Payments
+                  </TabsTrigger>
+                  <TabsTrigger value="leases" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <FileText className="w-4 h-4" /> Leases
+                  </TabsTrigger>
+                  <TabsTrigger value="messages" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <MessageSquare className="w-4 h-4" /> Messages
+                  </TabsTrigger>
+                  <TabsTrigger value="saved" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <Heart className="w-4 h-4" /> Saved
+                  </TabsTrigger>
+                  <TabsTrigger value="verification" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <ShieldCheck className="w-4 h-4" /> Verification
+                  </TabsTrigger>
+                  <TabsTrigger value="availability" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                    <Calendar className="w-4 h-4" /> Availability
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
               <TabsContent value="activity" className="space-y-6">
+                {/* Analytics Section */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-card/50 border border-border/50 p-5 rounded-2xl">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
+                        <TrendingUp className="w-5 h-5" />
+                      </div>
+                      <span className="text-sm font-medium text-muted-foreground">Total Views</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <h4 className="text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.views || 0), 0) || 0}</h4>
+                      <span className="text-xs text-green-500 font-medium">+12% vs last month</span>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-card/50 border border-border/50 p-5 rounded-2xl">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-purple-500/10 rounded-lg text-purple-500">
+                        <UsersIcon className="w-5 h-5" />
+                      </div>
+                      <span className="text-sm font-medium text-muted-foreground">Active Inquiries</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <h4 className="text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.leads || 0), 0) || 0}</h4>
+                      <span className="text-xs text-green-500 font-medium">+5 new today</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-card/50 border border-border/50 p-5 rounded-2xl">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-green-500/10 rounded-lg text-green-500">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <span className="text-sm font-medium text-muted-foreground">Visits Verified</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <h4 className="text-3xl font-bold">{bookings?.filter(b => b.booking_status === 'completed').length || 0}</h4>
+                      <span className="text-xs text-muted-foreground font-medium">Out of {bookings?.length || 0} total</span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Recent Bookings */}
                 <div>
                   <div className="flex items-center justify-between mb-6">
@@ -894,6 +1068,217 @@ export default function Profile() {
                 </div>
               </TabsContent>
 
+              <TabsContent value="properties" className="space-y-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-bold">My Listed Properties</h3>
+                    <p className="text-sm text-muted-foreground">Manage your active listings and track their performance.</p>
+                  </div>
+                  <Button onClick={() => navigate('/post-property')} className="gap-2">
+                    <Plus className="w-4 h-4" /> Post New
+                  </Button>
+                </div>
+
+                {ownerPropertiesLoading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {[1, 2].map(i => <div key={i} className="h-64 bg-card/50 animate-pulse rounded-2xl border border-border" />)}
+                  </div>
+                ) : ownerProperties && ownerProperties.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {ownerProperties.map((property) => (
+                      <div key={property.id} className="space-y-3 group">
+                        <PropertyCard property={{
+                          ...property,
+                          listingType: property.type,
+                          propertyType: property.property_category,
+                          bhk: property.bedrooms,
+                          furnishing: property.furnishing_status,
+                          carpetArea: property.area,
+                        }} />
+                        <div className="flex items-center justify-between px-2">
+                          <div className="flex gap-4">
+                            <div className="text-xs flex items-center gap-1 text-muted-foreground">
+                              <Eye className="w-3 h-3" /> {property.views || 0}
+                            </div>
+                            <div className="text-xs flex items-center gap-1 text-muted-foreground">
+                              <UsersIcon className="w-3 h-3" /> {property.leads || 0}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant={property.is_available ? 'outline' : 'default'}
+                            className="h-8 text-[10px] font-bold uppercase tracking-wider"
+                            onClick={() =>
+                              togglePropertyStatusMutation.mutate({ id: property.id, isActive: !property.is_available })
+                            }
+                          >
+                            {property.is_available ? 'Pause listing' : 'Activate listing'}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
+                      <Building2 className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">No properties listed</h3>
+                    <p className="text-muted-foreground max-w-xs mx-auto mb-6">
+                      List your first property and reach thousands of verified tenants.
+                    </p>
+                    <Button onClick={() => navigate('/post-property')}>
+                      Post a Property
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="payments" className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Rent Schedule */}
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-primary" />
+                        Rent Schedule
+                      </h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {rentSchedule && rentSchedule.length > 0 ? (
+                        rentSchedule.map((rent: any) => (
+                          <div key={rent.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-xl border border-border/50">
+                            <div>
+                              <p className="font-bold text-sm">{rent.properties?.title}</p>
+                              <p className="text-xs text-muted-foreground">Due: {new Date(rent.dueDate).toLocaleDateString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-primary">₹{rent.amount.toLocaleString()}</p>
+                              <Badge variant={rent.status === 'paid' ? 'default' : 'outline'} className="text-[10px] h-5">
+                                {rent.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-center py-8 text-muted-foreground">No upcoming rent payments.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Invoices */}
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <Receipt className="w-5 h-5 text-primary" />
+                        Recent Invoices
+                      </h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {invoices && invoices.length > 0 ? (
+                        invoices.map((inv: any) => (
+                          <div key={inv.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-xl border border-border/50">
+                            <div>
+                              <p className="font-bold text-sm">{inv.description}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(inv.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold">₹{inv.amount.toLocaleString()}</p>
+                              <Badge variant="secondary" className="text-[10px] h-5">
+                                {inv.status || 'Paid'}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-center py-8 text-muted-foreground">No invoices found.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="leases" className="space-y-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold">My Active Leases</h3>
+                </div>
+
+                {userLeases && userLeases.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {userLeases.map((lease: any) => (
+                      <div key={lease.id} className="bg-card rounded-2xl border border-border p-6 shadow-sm hover:border-primary/30 transition-all">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h4 className="font-bold text-lg">{lease.properties?.title}</h4>
+                            <p className="text-sm text-muted-foreground">{lease.properties?.address}</p>
+                          </div>
+                          <Badge className="bg-green-500">{lease.status}</Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 py-4 border-y border-border/50 my-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Start Date</p>
+                            <p className="font-medium text-sm">{new Date(lease.start_date).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">End Date</p>
+                            <p className="font-medium text-sm">{new Date(lease.end_date).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Monthly Rent</p>
+                            <p className="font-bold text-sm text-primary">₹{lease.monthly_rent?.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Lease ID</p>
+                            <p className="font-medium text-sm">#{lease.id.slice(0, 8)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-4">
+                          <Button variant="outline" size="sm" className="w-full gap-2">
+                            <FileText className="w-4 h-4" /> View Agreement
+                          </Button>
+                          <Button variant="outline" size="sm" className="w-full gap-2">
+                            <Info className="w-4 h-4" /> Details
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 bg-card/30 rounded-2xl border border-dashed border-border">
+                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h4 className="font-bold text-lg mb-2">No active leases</h4>
+                    <p className="text-muted-foreground max-w-xs mx-auto mb-6">You don't have any active rental agreements at the moment.</p>
+                    <Button onClick={() => navigate('/properties')}>Browse Properties</Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="messages" className="space-y-6">
+                <div className="bg-card rounded-2xl border border-border p-6 shadow-sm min-h-[400px] flex flex-col">
+                  <div className="flex items-center justify-between mb-6 pb-4 border-b border-border/50">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                      <MessageSquare className="w-5 h-5 text-primary" />
+                      Messages
+                    </h3>
+                  </div>
+                  
+                  <div className="flex-1 flex flex-col items-center justify-center text-center">
+                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                      <MessageSquare className="w-10 h-10 text-primary" />
+                    </div>
+                    <h4 className="text-lg font-bold mb-2">No messages yet</h4>
+                    <p className="text-muted-foreground max-w-xs">Your conversations with property owners and tenants will appear here.</p>
+                    <Button variant="outline" className="mt-6" onClick={() => navigate('/properties')}>
+                      Start a Conversation
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
               <TabsContent value="saved" className="space-y-6">
                 <div>
                   <div className="flex items-center justify-between mb-6">
@@ -993,27 +1378,72 @@ export default function Profile() {
                     {timeSlots.map((item) => (
                       <div
                         key={item.id}
-                        onClick={() => toggleSlot(item.id)}
                         className={cn(
-                          "flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
+                          "flex items-center justify-between p-3 rounded-xl border transition-all relative group/slot",
                           item.active ? "bg-primary/5 border-primary/30" : "bg-background border-border"
                         )}
                       >
-                        <span className={cn("text-xs font-medium", item.active ? "text-primary" : "text-muted-foreground")}>
-                          {item.slot}
-                        </span>
-                        <div className={cn(
-                          "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                          item.active ? "border-primary bg-primary" : "border-muted-foreground/30"
-                        )}>
-                          {item.active && <CheckCircle2 className="w-3 h-3 text-white" />}
+                        <div className="flex-1 cursor-pointer" onClick={() => toggleSlot(item.id)}>
+                          <span className={cn("text-xs font-medium", item.active ? "text-primary" : "text-muted-foreground")}>
+                            {item.slot}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            onClick={() => toggleSlot(item.id)}
+                            className={cn(
+                              "w-4 h-4 rounded-full border-2 flex items-center justify-center cursor-pointer",
+                              item.active ? "border-primary bg-primary" : "border-muted-foreground/30"
+                            )}
+                          >
+                            {item.active && <CheckCircle2 className="w-3 h-3 text-white" />}
+                          </div>
+                          {timeSlots.length > 4 && (
+                            <button 
+                              onClick={() => removeSlot(item.id)}
+                              className="text-muted-foreground hover:text-destructive opacity-0 group-hover/slot:opacity-100 transition-opacity"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
-                  <Button variant="ghost" size="sm" className="w-full border border-dashed border-border rounded-xl h-10 text-muted-foreground hover:text-primary">
-                    <Plus className="w-4 h-4 mr-2" /> Add custom slot
-                  </Button>
+
+                  <Dialog open={isAddSlotOpen} onOpenChange={setIsAddSlotOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-full border border-dashed border-border rounded-xl h-10 text-muted-foreground hover:text-primary">
+                        <Plus className="w-4 h-4 mr-2" /> Add custom slot
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Add Custom Time Slot</DialogTitle>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Start Time</Label>
+                            <Input 
+                              type="time" 
+                              value={newSlotStart} 
+                              onChange={(e) => setNewSlotStart(e.target.value)} 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>End Time</Label>
+                            <Input 
+                              type="time" 
+                              value={newSlotEnd} 
+                              onChange={(e) => setNewSlotEnd(e.target.value)} 
+                            />
+                          </div>
+                        </div>
+                        <Button onClick={handleAddCustomSlot} className="w-full">Add Slot</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </div>
 

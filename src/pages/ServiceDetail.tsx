@@ -25,11 +25,16 @@ export default function ServiceDetail() {
   const { data: service, isLoading } = useQuery({
     queryKey: ['service', id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+      const query = supabase.from('services').select('*');
+      
+      if (isUuid) {
+        query.eq('id', id);
+      } else {
+        query.eq('slug', id);
+      }
+
+      const { data, error } = await query.single();
       if (error) throw error;
       return data;
     },

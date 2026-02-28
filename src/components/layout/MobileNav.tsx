@@ -4,8 +4,7 @@ import {
   Search, 
   PlusSquare, 
   Heart, 
-  User,
-  MessageCircle
+  HelpCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -19,7 +18,7 @@ export function MobileNav() {
     { label: 'Search', icon: Search, href: '/properties' },
     { label: 'Post', icon: PlusSquare, href: '/post-property', primary: true },
     { label: 'Saved', icon: Heart, href: '/profile?tab=saved' },
-    { label: 'Chat', icon: MessageCircle, href: '/chat' },
+    { label: 'Support', icon: HelpCircle, href: '/chat' },
   ];
 
   return (

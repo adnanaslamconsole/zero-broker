@@ -7,7 +7,6 @@ import type { Payment, RentScheduleItem } from '@/types/payments';
 import type { RentalAgreement } from '@/types/agreements';
 import type { NotificationItem } from '@/types/notifications';
 import type { PricingPlan } from '@/types/plans';
-import type { ChatThread, ChatMessage } from '@/types/chat';
 
 let properties: Property[] = [...sampleProperties];
 
@@ -199,37 +198,6 @@ let agreements: RentalAgreement[] = [];
 let notifications: NotificationItem[] = [];
 let savedSearchCounter = 0;
 
-const chatThreads: ChatThread[] = [
-  {
-    id: 'thread1',
-    otherUser: {
-      id: 'owner2',
-      name: 'Rahul Verma',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-    },
-    lastMessage: {
-      id: 'msg1',
-      senderId: 'owner2',
-      receiverId: 'user1',
-      content: 'Is the property still available?',
-      timestamp: new Date().toISOString(),
-      isRead: false,
-    },
-    unreadCount: 1,
-  },
-];
-
-const chatMessages: ChatMessage[] = [
-  {
-    id: 'msg1',
-    senderId: 'owner2',
-    receiverId: 'user1',
-    content: 'Is the property still available?',
-    timestamp: new Date().toISOString(),
-    isRead: false,
-  },
-];
-
 export function getCurrentUser(): Promise<UserAccountSnapshot | null> {
   return Promise.resolve(currentUser);
 }
@@ -359,25 +327,4 @@ export function listAgreements(): Promise<RentalAgreement[]> {
 
 export function listNotifications(): Promise<NotificationItem[]> {
   return Promise.resolve(notifications);
-}
-
-export function listChatThreads(): Promise<ChatThread[]> {
-  return Promise.resolve(chatThreads);
-}
-
-export function getChatMessages(threadId: string): Promise<ChatMessage[]> {
-  return Promise.resolve(chatMessages);
-}
-
-export function sendMessage(receiverId: string, content: string): Promise<ChatMessage> {
-  const msg: ChatMessage = {
-    id: String(Date.now()),
-    senderId: 'user1',
-    receiverId,
-    content,
-    timestamp: new Date().toISOString(),
-    isRead: false,
-  };
-  chatMessages.push(msg);
-  return Promise.resolve(msg);
 }

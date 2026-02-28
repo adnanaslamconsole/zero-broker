@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { UserAccountSnapshot, UserProfile } from '@/types/user';
 import { toast } from 'sonner';
@@ -9,7 +9,15 @@ interface AuthContextValue {
   isLoading: boolean;
   loginWithOtp: (identifier: string, type: 'email' | 'phone', name?: string, role?: string) => Promise<void>;
   verifyOtp: (identifier: string, token: string, type: 'email' | 'phone') => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signInWithOAuth: (provider: 'google' | 'github') => Promise<void>;
+  signUp: (email: string, password: string, name: string, role?: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
+  // MFA methods
+  enrollMfa: () => Promise<{ qrCode: string; secret: string }>;
+  verifyAndEnableMfa: (code: string, factorId: string) => Promise<void>;
+  unenrollMfa: (factorId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -17,6 +25,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserAccountSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const fetchIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -28,7 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) throw error;
         
         if (session?.user && mounted) {
-          await fetchProfile(session.user.id);
+          const fetchId = Math.random().toString(36).substring(7);
+          fetchIdRef.current = fetchId;
+          await fetchProfile(session.user.id, fetchId);
         } else if (mounted) {
           // Check for demo user session in localStorage
           const demoSession = localStorage.getItem('zerobroker-demo-session');
@@ -59,11 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session?.user) {
-          await fetchProfile(session.user.id);
+          const fetchId = Math.random().toString(36).substring(7);
+          fetchIdRef.current = fetchId;
+          await fetchProfile(session.user.id, fetchId);
+        } else {
+          setIsLoading(false);
         }
       } else if (event === 'SIGNED_OUT') {
+        fetchIdRef.current = null;
         setUser(null);
         localStorage.removeItem('zerobroker-demo-session');
+        setIsLoading(false);
+      } else {
+        // Handle all other events (USER_UPDATED, INITIAL_SESSION, PASSWORD_RECOVERY, etc.)
         setIsLoading(false);
       }
     });
@@ -74,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, fetchId: string) => {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
@@ -84,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
 
-      if (profile) {
+      if (profile && fetchIdRef.current === fetchId) {
         // Transform DB profile to UserProfile type
         const userProfile: UserProfile = {
           id: profile.id,
@@ -115,9 +134,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
-      toast.error('Failed to load user profile');
+      if (fetchIdRef.current === fetchId) {
+        toast.error('Failed to load user profile');
+      }
     } finally {
-      setIsLoading(false);
+      if (fetchIdRef.current === fetchId) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -183,6 +206,165 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const signIn = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        if (error.message.includes('Email not confirmed')) {
+          toast.error('Please verify your email before logging in.');
+        } else if (error.message.includes('Invalid login credentials')) {
+          await logSecurityEvent('login-failed', { email, reason: 'Invalid credentials' });
+          toast.error('Invalid email or password.');
+        } else {
+          toast.error(error.message);
+        }
+        throw error;
+      }
+
+      await logSecurityEvent('login-success', { email, userId: data.user?.id });
+      toast.success('Logged in successfully!');
+    } catch (error) {
+      console.error('SignIn error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signInWithOAuth = async (provider: 'google' | 'github') => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) throw error;
+      await logSecurityEvent('oauth-login-initiated', { provider });
+    } catch (error) {
+      console.error('OAuth error:', error);
+      toast.error((error as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signUp = async (email: string, password: string, name: string, role: string = 'tenant') => {
+    setIsLoading(true);
+    try {
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!passwordRegex.test(password)) {
+        throw new Error('Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.');
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            primary_role: role,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        await logSecurityEvent('registration-success', { email, userId: data.user.id });
+        toast.success('Registration successful! Please check your email for verification.');
+      }
+    } catch (error) {
+      console.error('SignUp error:', error);
+      toast.error((error as Error).message);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+      
+      await logSecurityEvent('password-changed', { userId: user?.profile.id });
+      toast.success('Password updated successfully!');
+    } catch (error) {
+      console.error('Update password error:', error);
+      toast.error((error as Error).message);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logSecurityEvent = async (type: string, metadata: any) => {
+    if (!user && !metadata.email) return;
+    
+    try {
+      await supabase.from('security_logs').insert({
+        user_id: user?.profile.id || metadata.userId,
+        event_type: type,
+        metadata,
+        ip_address: '0.0.0.0',
+        user_agent: navigator.userAgent,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Failed to log security event:', err);
+    }
+  };
+
+  const enrollMfa = async () => {
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: 'totp',
+    });
+
+    if (error) throw error;
+    
+    return {
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+      factorId: data.id,
+    };
+  };
+
+  const verifyAndEnableMfa = async (code: string, factorId: string) => {
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId,
+      code,
+    });
+
+    if (error) throw error;
+    
+    await logSecurityEvent('mfa-enabled', { factorId });
+    toast.success('MFA enabled successfully!');
+  };
+
+  const unenrollMfa = async (factorId: string) => {
+    const { error } = await supabase.auth.mfa.unenroll({
+      factorId,
+    });
+
+    if (error) throw error;
+    
+    await logSecurityEvent('mfa-disabled', { factorId });
+    toast.success('MFA disabled successfully!');
   };
 
   const verifyOtp = async (identifier: string, token: string, type: 'email' | 'phone') => {
@@ -326,6 +508,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const err = error as Error;
       toast.error(err.message || 'Failed to logout');
     } finally {
+      // Ensure loading is cleared regardless of outcome
       setIsLoading(false);
     }
   };
@@ -337,7 +520,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         loginWithOtp,
         verifyOtp,
+         signIn,
+         signInWithOAuth,
+         signUp,
+         updatePassword,
         logout,
+        enrollMfa,
+        verifyAndEnableMfa,
+        unenrollMfa,
       }}
     >
       {children}

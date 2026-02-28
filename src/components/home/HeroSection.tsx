@@ -100,21 +100,21 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="text-3xl xs:text-4xl sm:text-5xl lg:text-7xl font-display font-bold text-white mb-4 tracking-tight leading-[1.1]"
+            className="text-4xl xs:text-5xl sm:text-7xl lg:text-8xl font-display font-black text-white mb-6 tracking-tight leading-[0.95]"
           >
-            Find Your Perfect Home
+            Find Your <span className="text-accent underline decoration-accent/30 underline-offset-[12px]">Perfect Home</span>
             <br />
-            <span className="text-white/80">Without Brokerage</span>
+            <span className="text-white/90">Without Brokerage</span>
           </motion.h1>
 
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="text-base sm:text-lg lg:text-xl text-white/70 mb-8 sm:mb-12 max-w-2xl mx-auto px-4"
+            className="text-lg sm:text-xl lg:text-2xl text-white/80 mb-10 sm:mb-14 max-w-3xl mx-auto px-4 font-medium leading-relaxed"
           >
             Connect directly with property owners. No middlemen, no commission. 
-            Over 50 lakh happy customers across 30+ cities.
+            Over <span className="text-white font-bold">50 lakh</span> happy customers across 30+ cities.
           </motion.p>
 
           {/* Search Card */}
@@ -122,54 +122,57 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl p-4 sm:p-6 lg:p-8 search-bar text-left mx-2 sm:mx-0"
+            className="bg-white/95 backdrop-blur-2xl rounded-3xl sm:rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] p-5 sm:p-8 lg:p-10 search-bar text-left mx-2 sm:mx-0 border border-white/20"
           >
             {/* Tabs */}
-            <div className="flex items-center gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2 sm:mx-0 sm:px-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-4 sm:mb-8 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2 sm:mx-0 sm:px-0">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-xl font-semibold text-xs sm:text-sm transition-all whitespace-nowrap touch-friendly',
+                    'flex items-center gap-1.5 sm:gap-2.5 px-3 py-2 sm:px-7 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] xs:text-xs sm:text-sm transition-all whitespace-nowrap touch-friendly uppercase tracking-widest shrink-0',
                     activeTab === tab.id
-                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
-                      : 'text-muted-foreground hover:bg-secondary'
+                      ? 'bg-primary text-primary-foreground shadow-lg sm:shadow-2xl shadow-primary/40 scale-[1.02] sm:scale-105'
+                      : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
                   )}
                 >
-                  <tab.icon className="w-4 h-4" />
+                  <tab.icon className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
                   {tab.label}
                 </button>
               ))}
             </div>
 
             {/* Search Bar */}
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-              <div className="relative flex-1">
+            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 lg:items-center">
+              <div className="relative flex-1 group">
+                <div className="absolute inset-y-0 left-4 sm:left-5 flex items-center pointer-events-none z-20">
+                  <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-primary/40 group-focus-within:text-primary transition-colors" />
+                </div>
                 <LocationSearch 
                   value={searchQuery}
                   onChange={setSearchQuery}
                   onLocationSelect={(loc) => {
                     setSelectedLocation({ lat: loc.lat, lon: loc.lon });
                   }}
-                  placeholder="City, locality or landmark..."
-                  className="w-full h-14 sm:h-16 rounded-xl sm:rounded-2xl border-2 focus-visible:ring-primary"
+                  placeholder="Enter city, locality..."
+                  className="w-full h-14 sm:h-20 pl-11 sm:pl-14 rounded-xl sm:rounded-3xl border-2 border-secondary bg-secondary/20 focus-visible:ring-primary focus-visible:border-primary transition-all text-sm sm:text-lg font-semibold"
                 />
               </div>
-              <Button size="xl" className="w-full sm:w-auto gap-2 px-8 h-14 sm:h-16 rounded-xl sm:rounded-2xl text-base sm:text-lg font-bold shadow-xl shadow-primary/20" onClick={handleSearch}>
-                <Search className="w-5 h-5" />
-                Search
-                <ArrowRight className="w-4 h-4 hidden sm:block" />
+              <Button size="xl" className="w-full lg:w-auto gap-2 sm:gap-3 px-6 sm:px-10 h-14 sm:h-20 rounded-xl sm:rounded-3xl text-base sm:text-xl font-black shadow-xl sm:shadow-2xl shadow-primary/30 hover:scale-[1.01] sm:hover:scale-[1.02] active:scale-95 transition-all shrink-0" onClick={handleSearch}>
+                <Search className="w-5 h-5 sm:w-6 sm:h-6" />
+                Find Homes
+                <ArrowRight className="w-5 h-5 hidden sm:block" />
               </Button>
             </div>
 
             {/* Quick Filters */}
-            <div className="flex flex-wrap gap-2 mt-5 items-center">
-              <span className="text-xs sm:text-sm font-medium text-muted-foreground mr-1">Popular:</span>
+            <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-4 sm:mt-5 items-center">
+              <span className="text-[10px] sm:text-sm font-medium text-muted-foreground mr-1">Popular:</span>
               {['Koramangala', 'Indiranagar', 'HSR Layout'].map((locality) => (
                 <button
                   key={locality}
-                  className="text-xs sm:text-sm font-medium text-primary hover:text-accent transition-colors bg-primary/5 px-3 py-1.5 rounded-lg hover:bg-primary/10 touch-friendly"
+                  className="text-[10px] sm:text-sm font-medium text-primary hover:text-accent transition-colors bg-primary/5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg hover:bg-primary/10 touch-friendly"
                   onClick={() => setSearchQuery(locality)}
                 >
                   {locality}

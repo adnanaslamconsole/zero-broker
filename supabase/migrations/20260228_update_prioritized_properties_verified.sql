@@ -64,11 +64,11 @@ BEGIN
       AND p.is_available = true
   )
   SELECT 
-    fd.id, fd.title, fd.description, fd.type, fd.property_category, fd.price, 
-    fd.city, fd.locality, fd.address, fd.bedrooms, fd.bathrooms, fd.area, 
-    fd.furnishing_status, fd.amenities, fd.images, fd.latitude, fd.longitude, 
-    fd.is_verified, fd.is_available, fd.owner_id, fd.prof_kyc_status, fd.prof_trust_score, fd.created_at, fd.updated_at,
-    fd.full_count
+    fd.id, fd.title, fd.description, fd.type, fd.property_category, fd.price::NUMERIC, 
+    fd.city, fd.locality, fd.address, fd.bedrooms::INT, fd.bathrooms::INT, fd.area::NUMERIC, 
+    fd.furnishing_status, fd.amenities, fd.images, fd.latitude::DOUBLE PRECISION, fd.longitude::DOUBLE PRECISION, 
+    fd.is_verified, fd.is_available, fd.owner_id, fd.prof_kyc_status, fd.prof_trust_score::INTEGER, fd.created_at, fd.updated_at,
+    fd.full_count::BIGINT
   FROM filtered_data fd
   ORDER BY 
     CASE 

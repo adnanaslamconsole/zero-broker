@@ -1,26 +1,26 @@
 import { FormEvent, useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Mail, Clock, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Phone, Clock, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Login() {
   const { loginWithOtp, verifyOtp, isLoading } = useAuth();
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [role, setRole] = useState<'tenant' | 'owner'>('tenant');
   const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'email' | 'otp'>('email');
-  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
+  const [step, setStep] = useState<'method' | 'otp'>('method');
   const [timer, setTimer] = useState(0);
   const navigate = useNavigate();
 
@@ -34,215 +34,225 @@ export default function Login() {
     return () => clearInterval(interval);
   }, [timer]);
 
+  const [error, setError] = useState<string>('');
+
+  const validateIdentifier = (val: string) => {
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRe = /^\d{10}$/;
+    
+    if (!val) return "Email or Phone is required";
+    if (!emailRe.test(val) && !phoneRe.test(val.replace(/\D/g, ''))) {
+      return "Please enter a valid email or 10-digit phone number";
+    }
+    return "";
+  };
+
   const handleSendOtp = async (e: FormEvent) => {
     e.preventDefault();
-    const identifier = loginMethod === 'email' ? email.trim().toLowerCase() : phone.trim();
-    if (!identifier) return;
+    const validationError = validateIdentifier(identifier);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
-    await loginWithOtp(identifier, loginMethod, undefined, role);
+    setError('');
+    const isEmail = identifier.includes('@');
+    const type = isEmail ? 'email' : 'phone';
+    const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
+
+    await loginWithOtp(formattedIdentifier, type, undefined, role);
     setStep('otp');
-    setTimer(60); // Start 60s cooldown
+    setTimer(60);
   };
 
   const handleResendOtp = async () => {
     if (timer > 0) return;
-    const identifier = loginMethod === 'email' ? email.trim().toLowerCase() : phone.trim();
-    await loginWithOtp(identifier, loginMethod, undefined, role);
+    const isEmail = identifier.includes('@');
+    const type = isEmail ? 'email' : 'phone';
+    const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
+    await loginWithOtp(formattedIdentifier, type, undefined, role);
     setTimer(60);
   };
 
   const handleVerifyOtp = async (e: FormEvent) => {
     e.preventDefault();
-    const identifier = loginMethod === 'email' ? email.trim().toLowerCase() : phone.trim();
     if (!identifier || !otp) return;
     
+    const isEmail = identifier.includes('@');
+    const type = isEmail ? 'email' : 'phone';
+    const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
+
     try {
-      await verifyOtp(identifier, otp, loginMethod);
+      await verifyOtp(formattedIdentifier, otp, type);
       navigate('/profile');
     } catch (error) {
-      // Error is handled in AuthContext toast
-      setOtp(''); // Clear OTP on failure
+      setOtp('');
     }
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Header />
-      <main className="py-20 flex items-center justify-center">
-        <div className="container mx-auto px-4 max-w-md">
-          <div className="bg-card rounded-2xl border border-border shadow-xl p-8 space-y-6">
-            <div className="text-center space-y-2">
-              <h1 className="text-3xl font-display font-bold text-foreground">
-                {step === 'email' ? 'Join ZeroBroker' : 'Verify & Login'}
+      <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background">
+        <div className="w-full max-w-[440px] space-y-8">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-card rounded-3xl border border-border/60 shadow-2xl shadow-primary/5 p-6 sm:p-10 backdrop-blur-sm"
+          >
+            <div className="text-center space-y-2 mb-8">
+              <h1 className="text-3xl font-display font-bold tracking-tight text-foreground">
+                {step === 'method' ? 'Welcome Back' : 'Verify Identity'}
               </h1>
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-muted-foreground text-sm">
-                  {step === 'email' 
-                    ? 'Sign up or login to continue' 
-                    : `Enter the 8-digit code sent to ${loginMethod === 'email' ? email : phone}`
-                  }
-                </p>
-                {step === 'otp' && (
-                  <div className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                    <Clock className="w-3 h-3" /> Valid for 15 minutes
-                  </div>
-                )}
-              </div>
+              <p className="text-muted-foreground text-sm">
+                {step === 'method' 
+                  ? 'Sign in with your mobile number or email' 
+                  : `Enter the 8-digit code sent to ${identifier}`
+                }
+              </p>
             </div>
 
-            {step === 'email' ? (
-              <form onSubmit={handleSendOtp} className="space-y-4">
-                {/* Login Method Toggle */}
-                <Tabs value={loginMethod} onValueChange={(v) => setLoginMethod(v as 'email' | 'phone')} className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 mb-4">
-                    <TabsTrigger value="email" className="gap-2"><Mail className="w-4 h-4" /> Email</TabsTrigger>
-                    <TabsTrigger value="phone" className="gap-2"><Phone className="w-4 h-4" /> Phone</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-
-                {/* Role Selection */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">I am a</label>
-                  <Tabs value={role} onValueChange={(v) => setRole(v as 'tenant' | 'owner')} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="tenant">Tenant / Buyer</TabsTrigger>
-                      <TabsTrigger value="owner">Owner / Seller</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    {loginMethod === 'email' ? 'Email Address' : 'Phone Number'}
-                  </label>
-                  {loginMethod === 'email' ? (
-                    <Input
-                      type="email"
-                      placeholder="name@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      className="h-12 bg-secondary/30 border-border/50 focus:border-primary transition-all"
-                    />
-                  ) : (
-                    <div className="flex gap-2">
-                      <div className="h-12 w-16 bg-secondary/30 border border-border/50 rounded-md flex items-center justify-center text-sm font-medium text-muted-foreground">
-                        +91
-                      </div>
-                      <Input
-                        type="tel"
-                        placeholder="98765 43210"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                        required
-                        className="h-12 bg-secondary/30 border-border/50 focus:border-primary transition-all flex-1"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <Button 
-                  type="submit" 
-                  size="lg" 
-                  className="w-full text-base font-semibold" 
-                  disabled={
-                    (loginMethod === 'email' && !email) || 
-                    (loginMethod === 'phone' && phone.length !== 10) || 
-                    isLoading
-                  }
+            <AnimatePresence mode="wait">
+              {step === 'method' ? (
+                <motion.div
+                  key="login-form"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="space-y-6"
                 >
-                  {isLoading ? 'Sending...' : 'Continue'}
-                </Button>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-6">
-                <div className="flex flex-col items-center justify-center space-y-4 py-4">
-                  <div className="bg-secondary/20 p-4 rounded-2xl border border-border/50">
-                    <InputOTP
-                      maxLength={8}
-                      value={otp}
-                      onChange={(value) => setOtp(value)}
-                      disabled={isLoading}
+                  <form onSubmit={handleSendOtp} className="space-y-5">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground/80 ml-1">I am a</label>
+                      <Tabs value={role} onValueChange={(v) => setRole(v as any)} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 h-11 p-1 bg-secondary/30 rounded-xl">
+                          <TabsTrigger value="tenant" className="rounded-lg text-xs">Tenant / Buyer</TabsTrigger>
+                          <TabsTrigger value="owner" className="rounded-lg text-xs">Owner / Seller</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground/80 ml-1">
+                        Mobile Number or Email
+                      </label>
+                      <div className="space-y-2">
+                        <Input
+                          type="text"
+                          placeholder="type mobile number or email"
+                          value={identifier}
+                          onChange={(e) => {
+                            setIdentifier(e.target.value);
+                            if (error) setError("");
+                          }}
+                          required
+                          className={cn(
+                            "h-12 bg-secondary/20 border-border/40 focus:border-primary/50 transition-all rounded-xl",
+                            error && "border-destructive/50 focus:border-destructive"
+                          )}
+                        />
+                        {error && (
+                          <motion.p 
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="text-xs font-medium text-destructive ml-1"
+                          >
+                            {error}
+                          </motion.p>
+                        )}
+                      </div>
+                    </div>
+
+                    <Button 
+                      type="submit" 
+                      size="lg" 
+                      className="w-full h-12 text-base font-bold rounded-xl shadow-lg shadow-primary/10" 
+                      disabled={!identifier || isLoading}
                     >
-                      <InputOTPGroup className="gap-2 sm:gap-2">
-                        <InputOTPSlot index={0} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={1} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={2} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={3} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={4} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={5} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={6} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={7} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                      </InputOTPGroup>
-                    </InputOTP>
+                      {isLoading ? 'Sending...' : 'Send OTP'}
+                    </Button>
+                  </form>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="otp-verification"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-6"
+                >
+                  <div className="flex flex-col items-center justify-center space-y-6 py-4">
+                    <div className="bg-secondary/20 p-4 sm:p-6 rounded-3xl border border-border/40 backdrop-blur-sm">
+                      <InputOTP
+                        maxLength={8}
+                        value={otp}
+                        onChange={(value) => setOtp(value)}
+                        disabled={isLoading}
+                      >
+                        <InputOTPGroup className="gap-1.5 sm:gap-2">
+                          {[...Array(8)].map((_, i) => (
+                            <InputOTPSlot 
+                              key={i}
+                              index={i} 
+                              className="w-8 h-12 sm:w-10 sm:h-14 text-lg sm:text-xl font-bold rounded-lg border-2 border-border/50 focus:border-primary bg-background shadow-sm transition-all" 
+                            />
+                          ))}
+                        </InputOTPGroup>
+                      </InputOTP>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-primary/5 px-4 py-2 rounded-full border border-primary/10">
+                      <ShieldCheck className="w-4 h-4 text-primary" />
+                      Secure 8-digit verification code
+                    </div>
                   </div>
+
+                  <Button 
+                    onClick={handleVerifyOtp}
+                    size="lg" 
+                    className="w-full h-14 text-lg font-bold rounded-2xl shadow-xl shadow-primary/20 transition-all active:scale-[0.98]" 
+                    disabled={otp.length !== 8 || isLoading}
+                  >
+                    {isLoading ? (
+                      <span className="flex items-center gap-2">
+                        <Clock className="w-5 h-5 animate-spin" /> Verifying...
+                      </span>
+                    ) : 'Verify OTP'}
+                  </Button>
                   
-                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-secondary/30 px-3 py-1.5 rounded-lg border border-border/50">
-                    <ShieldCheck className="w-3 h-3 text-green-500" /> Secure cryptographically generated code
-                  </div>
-                </div>
-
-                <Button type="submit" size="lg" className="w-full h-12 text-base font-bold shadow-lg shadow-primary/20" disabled={otp.length !== 8 || isLoading}>
-                  {isLoading ? 'Verifying Code...' : 'Verify & Sign In'}
-                </Button>
-                
-                <div className="flex flex-col gap-2 pt-2">
-                  <div className="flex items-center justify-between gap-4">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-9 px-3 font-medium text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        setStep('email');
-                        setOtp('');
-                        setTimer(0);
-                      }}
-                      disabled={isLoading}
-                    >
-                      <ArrowLeft className="w-3 h-3 mr-1.5" /> Back to {loginMethod === 'email' ? 'email' : 'phone'}
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-9 px-3 font-semibold text-primary hover:text-primary hover:bg-primary/5"
-                      onClick={handleResendOtp}
-                      disabled={timer > 0 || isLoading}
-                    >
-                      {timer > 0 ? (
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="w-3 h-3" /> Resend in {timer}s
-                        </span>
-                      ) : (
-                        'Resend OTP'
-                      )}
-                    </Button>
-                  </div>
-
-                  <div className="flex items-start gap-2 p-3 bg-muted/30 rounded-xl border border-border/40 mt-2">
-                    <AlertCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      If you don't see the email, please check your spam folder or try resending. The code is only valid for 15 minutes.
+                  <div className="text-center space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Didn't receive the code?{' '}
+                      <button 
+                        onClick={handleResendOtp}
+                        disabled={timer > 0 || isLoading}
+                        className={cn(
+                          "font-bold text-primary hover:underline disabled:opacity-50 disabled:no-underline",
+                          timer > 0 && "cursor-not-allowed"
+                        )}
+                      >
+                        {timer > 0 ? `Resend in ${timer}s` : 'Resend OTP'}
+                      </button>
                     </p>
+                    
+                    <button 
+                      onClick={() => {
+                        setStep('method');
+                        setOtp('');
+                        setError('');
+                      }}
+                      className="flex items-center gap-2 mx-auto text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Try a different number or email
+                    </button>
                   </div>
-                </div>
-              </form>
-            )}
-            
-            <p className="text-xs text-muted-foreground text-center leading-relaxed px-4">
-              By continuing, you agree to our{' '}
-              <Link to="/terms" className="underline hover:text-foreground">
-                Terms of Service
-              </Link>{' '}
-              and{' '}
-              <Link to="/privacy-policy" className="underline hover:text-foreground">
-                Privacy Policy
-              </Link>
-              .
-            </p>
-          </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+
+
         </div>
       </main>
       <Footer />

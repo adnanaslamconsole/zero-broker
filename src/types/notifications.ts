@@ -18,7 +18,17 @@ export interface NotificationItem {
     | 'response'
     | 'rent-due'
     | 'agreement-expiry'
+    | 'booking-site-visit'
+    | 'token-payment-received'
+    | 'token-refunded'
     | 'system';
+  metadata?: {
+    bookingId?: string;
+    paymentId?: string;
+    propertyId?: string;
+    amount?: number;
+    transactionReference?: string;
+  };
   createdAt: string;
   readAt?: string;
 }

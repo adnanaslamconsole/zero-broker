@@ -70,8 +70,8 @@ export const BookingOTPDialog: React.FC<BookingOTPDialogProps> = ({ booking, ope
   });
 
   const handleVerify = () => {
-    if (otp.length !== 4) {
-      toast.error('Please enter a valid 4-digit OTP');
+    if (otp.length !== 8) {
+      toast.error('Please enter a valid 8-digit OTP');
       return;
     }
     verifyOtpMutation.mutate(otp);
@@ -117,19 +117,23 @@ export const BookingOTPDialog: React.FC<BookingOTPDialogProps> = ({ booking, ope
 
               <div className="space-y-3 sm:space-y-4 flex flex-col items-center">
                 <p className="text-xs sm:text-sm font-medium text-center text-muted-foreground">
-                  Ask the owner for the 4-digit OTP to confirm your visit.
+                  Ask the owner for the 8-digit OTP to confirm your visit.
                 </p>
                 <InputOTP
-                  maxLength={4}
+                  maxLength={8}
                   value={otp}
                   onChange={setOtp}
-                  className="gap-2"
+                  className="gap-1.5"
                 >
                   <InputOTPGroup>
-                    <InputOTPSlot index={0} className="w-10 h-12 sm:w-12 sm:h-14 text-lg sm:text-xl font-bold rounded-xl border-2 focus:border-primary" />
-                    <InputOTPSlot index={1} className="w-10 h-12 sm:w-12 sm:h-14 text-lg sm:text-xl font-bold rounded-xl border-2 focus:border-primary" />
-                    <InputOTPSlot index={2} className="w-10 h-12 sm:w-12 sm:h-14 text-lg sm:text-xl font-bold rounded-xl border-2 focus:border-primary" />
-                    <InputOTPSlot index={3} className="w-10 h-12 sm:w-12 sm:h-14 text-lg sm:text-xl font-bold rounded-xl border-2 focus:border-primary" />
+                    <InputOTPSlot index={0} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={1} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={2} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={3} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={4} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={5} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={6} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
+                    <InputOTPSlot index={7} className="w-7 h-10 sm:w-9 sm:h-12 text-sm sm:text-base font-bold rounded-lg border-2 focus:border-primary" />
                   </InputOTPGroup>
                 </InputOTP>
               </div>
@@ -138,7 +142,7 @@ export const BookingOTPDialog: React.FC<BookingOTPDialogProps> = ({ booking, ope
                 <Button 
                   className="w-full h-11 sm:h-12 rounded-xl font-bold shadow-lg shadow-primary/20 text-sm sm:text-base" 
                   onClick={handleVerify}
-                  disabled={otp.length !== 4 || verifyOtpMutation.isPending}
+                  disabled={otp.length !== 8 || verifyOtpMutation.isPending}
                 >
                   {verifyOtpMutation.isPending ? (
                     <span className="flex items-center gap-2">

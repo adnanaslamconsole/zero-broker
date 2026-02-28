@@ -238,8 +238,16 @@ export default function Properties() {
       });
 
       if (prioritizedError) {
+        // If RPC is missing or has a structure error, we can still fallback
         console.error('Error fetching prioritized properties:', prioritizedError);
         
+        // PGRST116: Function not found, 42804: Structure mismatch
+        const isRpcError = prioritizedError.code === 'PGRST116' || prioritizedError.code === '42804' || prioritizedError.code === 'PGRST202';
+        
+        if (!isRpcError) {
+          throw prioritizedError;
+        }
+
         // Fallback to regular query if RPC fails
         let query = supabase.from('properties').select('*', { count: 'exact' });
         

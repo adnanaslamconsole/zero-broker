@@ -10,10 +10,27 @@ export interface Payment {
   currency: 'INR';
   method: PaymentMethod;
   status: PaymentStatus;
-  purpose: 'rent' | 'deposit' | 'service' | 'maintenance' | 'subscription';
+  purpose: 'rent' | 'deposit' | 'service' | 'maintenance' | 'subscription' | 'site-visit-token';
   referenceId?: string;
+  gateway?: 'razorpay' | 'stripe' | 'paytm';
+  gatewayTransactionId?: string;
+  escrowStatus?: 'held' | 'released' | 'refunded';
+  escrowDetails?: {
+    accountNumber: string;
+    bankName: string;
+    ifscCode: string;
+  };
+  auditTrail: AuditLog[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AuditLog {
+  timestamp: string;
+  action: string;
+  actorId: string;
+  details: string;
+  reference?: string;
 }
 
 export interface RentScheduleItem {

@@ -10,7 +10,7 @@ import {
   Building,
   Wrench,
   Crown,
-  MessageCircle,
+  HelpCircle,
   ShieldCheck,
   Heart,
 } from 'lucide-react';
@@ -92,27 +92,27 @@ export function Header() {
       }
       return count || 0;
     },
-    enabled: !!user && !user.profile.isDemo,
+    enabled: !!user,
     refetchInterval: 30000, // Poll every 30s
   });
 
   return (
-    <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-lg border-b border-border shadow-sm">
+    <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-xl border-b border-border/50 transition-all duration-300">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 lg:h-20">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center transition-transform group-hover:scale-105">
-              <Home className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-primary-foreground" />
+          <Link to="/" className="flex items-center gap-3 group shrink-0" aria-label="ZeroBroker Home">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-accent flex items-center justify-center transition-all duration-500 group-hover:rotate-6 group-hover:scale-110 shadow-lg shadow-primary/20">
+              <Home className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
             </div>
             <div className="flex flex-col">
-              <span className="text-lg sm:text-xl font-display font-bold text-foreground leading-none">ZeroBroker</span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">Zero Brokerage</span>
+              <span className="text-xl sm:text-2xl font-display font-black text-foreground tracking-tighter leading-none group-hover:text-primary transition-colors">ZeroBroker</span>
+              <span className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5 opacity-80 group-hover:opacity-100">Zero Brokerage</span>
             </div>
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-1">
+          <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
             {navLinks.map((link) => (
               <div
                 key={link.label}
@@ -122,29 +122,34 @@ export function Header() {
               >
                 <Link
                   to={link.href}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground rounded-lg hover:bg-secondary transition-all"
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-foreground/70 hover:text-primary rounded-xl hover:bg-primary/5 transition-all duration-300"
+                  aria-haspopup={link.submenu ? "true" : "false"}
                 >
-                  <link.icon className="w-4 h-4 opacity-70 group-hover:opacity-100 transition-opacity" />
+                  <link.icon className="w-4 h-4 opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
                   {link.label}
-                  {link.submenu && <ChevronDown className="w-3.5 h-3.5 opacity-50" />}
+                  {link.submenu && <ChevronDown className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 group-hover:rotate-180 transition-all duration-300" />}
                 </Link>
 
                 {/* Submenu */}
                 <AnimatePresence>
                   {link.submenu && activeSubmenu === link.label && (
                     <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      initial={{ opacity: 0, y: 15, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.15, ease: "easeOut" }}
-                      className="absolute top-full left-0 mt-1 w-56 bg-card rounded-xl border border-border shadow-xl overflow-hidden py-1.5"
+                      exit={{ opacity: 0, y: 15, scale: 0.95 }}
+                      transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                      className="absolute top-full left-0 mt-2 w-64 bg-card/95 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-primary/10 overflow-hidden py-2"
                     >
+                      <div className="px-4 py-2 mb-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{link.label} Options</span>
+                      </div>
                       {link.submenu.map((item) => (
                         <Link
                           key={item.label}
                           to={item.href}
-                          className="block px-4 py-2 text-sm text-foreground/80 hover:text-foreground hover:bg-secondary transition-colors"
+                          className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-primary/5 transition-all duration-200 group/item"
                         >
+                          <div className="w-1.5 h-1.5 rounded-full bg-primary/20 group-hover/item:bg-primary transition-colors" />
                           {item.label}
                         </Link>
                       ))}
@@ -156,49 +161,46 @@ export function Header() {
           </nav>
 
           {/* Desktop Actions */}
-          <div className="hidden lg:flex items-center gap-2 xl:gap-3">
-            <Button variant="ghost" size="icon" className="relative touch-friendly" onClick={() => navigate('/chat')}>
-              <MessageCircle className="w-5 h-5" />
-            </Button>
-            
-            {isAdmin && (
-              <Button variant="ghost" className="text-primary font-semibold h-10 px-4" onClick={() => navigate('/admin')}>
-                <ShieldCheck className="w-4 h-4 mr-2" />
-                Admin
+          <div className="hidden lg:flex items-center gap-3 xl:gap-4">
+            <div className="flex items-center bg-secondary/30 rounded-full p-1 border border-border/40">
+              <Button variant="ghost" size="icon" className="w-10 h-10 rounded-full hover:bg-background shadow-none transition-all hover:scale-110" onClick={() => navigate('/chat')} aria-label="Support">
+                <HelpCircle className="w-5 h-5 text-foreground/70" />
               </Button>
-            )}
+              <Button variant="ghost" size="icon" className="w-10 h-10 rounded-full hover:bg-background shadow-none transition-all hover:scale-110" aria-label="Favorites">
+                <Heart className="w-5 h-5 text-foreground/70" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-10 h-10 rounded-full hover:bg-background shadow-none transition-all hover:scale-110 relative"
+                onClick={() => navigate('/notifications')}
+                aria-label={`${unreadCount} Unread notifications`}
+              >
+                <Bell className="w-5 h-5 text-foreground/70" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-primary ring-2 ring-background animate-pulse" />
+                )}
+              </Button>
+            </div>
+            
+            <div className="h-8 w-px bg-border/60 mx-1" />
 
-            <Button variant="ghost" size="icon" className="relative touch-friendly">
-              <Heart className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative touch-friendly"
-              onClick={() => navigate('/notifications')}
-            >
-              <Bell className="w-5 h-5" />
-              {unreadCount && unreadCount > 0 ? (
-                <span className="absolute top-2 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-white ring-2 ring-card">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              ) : null}
-            </Button>
             <Button 
               variant="outline" 
-              className="gap-2 h-10 px-4"
+              className="gap-2 h-11 px-5 rounded-xl border-primary/20 hover:border-primary/50 hover:bg-primary/5 font-bold transition-all duration-300"
               onClick={() => navigate('/post-property')}
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4.5 h-4.5 text-primary" />
               Post Property
             </Button>
+
             {user ? (
-              <Button variant="default" className="h-10 px-4" onClick={() => navigate('/profile')}>
-                {user.profile.name}
+              <Button variant="default" className="h-11 px-6 rounded-xl font-bold shadow-lg shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all" onClick={() => navigate('/profile')}>
+                {user.profile.name.split(' ')[0]}
               </Button>
             ) : (
-              <Button variant="default" className="h-10 px-4" onClick={() => navigate('/login')}>
-                Login / Register
+              <Button variant="default" className="h-11 px-6 rounded-xl font-bold shadow-lg shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all" onClick={() => navigate('/login')}>
+                Sign In
               </Button>
             )}
           </div>
