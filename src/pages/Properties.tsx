@@ -26,6 +26,7 @@ import { saveSearch } from '@/lib/mockApi';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { useGeolocation } from '@/hooks/useGeolocation';
 import type { Property, PropertyFilters, ListingType, PropertyType, FurnishingType } from '@/types/property';
 
 const propertyTypes: { value: PropertyType; label: string }[] = [
@@ -93,6 +94,7 @@ const transformProperty = (dbProperty: any): Property => ({
   isActive: dbProperty.is_available || true,
   views: 0,
   leads: 0,
+  distanceKm: dbProperty.distance_km || undefined,
   createdAt: dbProperty.created_at,
   updatedAt: dbProperty.updated_at,
 });
@@ -103,6 +105,9 @@ export default function Properties() {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [mapCenter, setMapCenter] = useState<[number, number]>([12.9716, 77.5946]); // Default Bangalore
+  const [mapBounds, setMapBounds] = useState<{ ne: [number, number]; sw: [number, number] } | null>(null);
+  const [radiusKm, setRadiusKm] = useState<number>(10);
+  const { coords: userCoords, loading: locationLoading, error: locationError } = useGeolocation();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -118,6 +123,36 @@ export default function Properties() {
     maxPrice: undefined,
   });
 
+  // Sync URL search params with filters state
+  useEffect(() => {
+    const type = searchParams.get('type') as ListingType;
+    const property = searchParams.get('property') as PropertyType;
+    const q = searchParams.get('q');
+
+    setFilters(prev => {
+      // Only update if they are actually different to avoid unnecessary re-renders
+      if (
+        prev.listingType === (type || undefined) &&
+        (prev.propertyType?.[0] || undefined) === (property || undefined) &&
+        searchQuery === (q || '')
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        listingType: type || undefined,
+        propertyType: property ? [property] : [],
+      };
+    });
+
+    if (q !== null && q !== searchQuery) {
+      setSearchQuery(q);
+    } else if (q === null && searchQuery !== '') {
+      setSearchQuery('');
+    }
+  }, [searchParams]);
+
   const [sortBy, setSortBy] = useState('relevance');
   const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -128,66 +163,118 @@ export default function Properties() {
     isFetchingNextPage,
     isLoading,
   } = useInfiniteQuery({
-    queryKey: ['properties', filters, searchQuery, sortBy],
+    queryKey: ['properties', filters, searchQuery, sortBy, userCoords, radiusKm, mapBounds, viewMode],
     queryFn: async ({ pageParam = 0 }) => {
-      const PAGE_SIZE = 9; // 3x3 grid
-      let query = supabase.from('properties').select('*', { count: 'exact' });
+      const PAGE_SIZE = viewMode === 'map' ? 100 : 9;
+      const offset = typeof pageParam === 'number' ? pageParam : 0;
+      
+      // Map view synchronization: If bounds are present and we're in map mode, filter by bounds
+      if (viewMode === 'map' && mapBounds) {
+        let query = supabase.from('properties').select('*', { count: 'exact' });
+        
+        query = query
+          .gte('latitude', mapBounds.sw[0])
+          .lte('latitude', mapBounds.ne[0])
+          .gte('longitude', mapBounds.sw[1])
+          .lte('longitude', mapBounds.ne[1]);
 
-      // Apply Filters
-      if (filters.listingType) {
-        query = query.eq('type', filters.listingType);
+        if (filters.listingType) query = query.eq('type', filters.listingType);
+        if (filters.propertyType?.length) query = query.in('property_category', filters.propertyType);
+        
+        const { data: boundData, count: boundCount, error: boundError } = await query
+          .range(offset, offset + PAGE_SIZE - 1);
+
+        if (!boundError) {
+          return {
+            properties: boundData?.map(transformProperty) || [],
+            nextPage: (boundCount && offset + PAGE_SIZE < boundCount) ? offset + PAGE_SIZE : undefined,
+          };
+        }
+      }
+
+      // If we have user coordinates, use the geospatial RPC to include distance
+      if (userCoords) {
+        const { data: geoData, error: geoError } = await supabase.rpc('get_properties_geospatial', {
+          p_user_lat: userCoords.latitude,
+          p_user_lng: userCoords.longitude,
+          p_radius_km: radiusKm,
+          p_type: filters.listingType || null,
+          p_category: filters.propertyType?.length ? filters.propertyType : null,
+          p_bedrooms: filters.bhk?.length ? filters.bhk : null,
+          p_furnishing: filters.furnishing?.length ? filters.furnishing : null,
+          p_min_price: filters.minPrice || null,
+          p_max_price: filters.maxPrice || null,
+          p_search_query: searchQuery || null,
+          p_sort_by: sortBy,
+          p_limit: PAGE_SIZE,
+          p_offset: offset
+        });
+
+        if (!geoError) {
+          const count = geoData?.[0]?.total_count || 0;
+          const nextOffset = offset + PAGE_SIZE;
+          return {
+            properties: geoData?.map(transformProperty) || [],
+            nextPage: (count && nextOffset < count) ? nextOffset : undefined,
+          };
+        }
+        console.error('Error fetching geospatial properties:', geoError);
+      }
+
+      // Fallback or default: Use the prioritized RPC
+      const userCity = localStorage.getItem('user_city');
+      const { data: prioritizedData, error: prioritizedError } = await supabase.rpc('get_properties_prioritized', {
+        p_city: userCity || null,
+        p_type: filters.listingType || null,
+        p_category: filters.propertyType?.length ? filters.propertyType : null,
+        p_bedrooms: filters.bhk?.length ? filters.bhk : null,
+        p_furnishing: filters.furnishing?.length ? filters.furnishing : null,
+        p_min_price: filters.minPrice || null,
+        p_max_price: filters.maxPrice || null,
+        p_search_query: searchQuery || null,
+        p_sort_by: sortBy,
+        p_limit: PAGE_SIZE,
+        p_offset: offset
+      });
+
+      if (prioritizedError) {
+        console.error('Error fetching prioritized properties:', prioritizedError);
+        
+        // Fallback to regular query if RPC fails
+        let query = supabase.from('properties').select('*', { count: 'exact' });
+        
+        if (filters.listingType) query = query.eq('type', filters.listingType);
+        if (filters.propertyType?.length) query = query.in('property_category', filters.propertyType);
+        if (filters.bhk?.length) query = query.in('bedrooms', filters.bhk);
+        if (filters.furnishing?.length) query = query.in('furnishing_status', filters.furnishing);
+        if (filters.minPrice) query = query.gte('price', filters.minPrice);
+        if (filters.maxPrice) query = query.lte('price', filters.maxPrice);
+        
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,city.ilike.%${searchQuery}%,locality.ilike.%${searchQuery}%`);
+        }
+
+        if (sortBy === 'price-low') query = query.order('price', { ascending: true });
+        else if (sortBy === 'price-high') query = query.order('price', { ascending: false });
+        else query = query.order('created_at', { ascending: false });
+
+        const { data: fallbackData, count: fallbackCount, error: fallbackError } = await query
+          .range(offset, offset + PAGE_SIZE - 1);
+
+        if (fallbackError) throw fallbackError;
+
+        return {
+          properties: fallbackData?.map(transformProperty) || [],
+          nextPage: (fallbackCount && offset + PAGE_SIZE < fallbackCount) ? offset + PAGE_SIZE : undefined,
+        };
       }
       
-      if (filters.propertyType && filters.propertyType.length > 0) {
-        query = query.in('property_category', filters.propertyType);
-      }
-
-      if (filters.bhk && filters.bhk.length > 0) {
-        query = query.in('bedrooms', filters.bhk);
-      }
-
-      if (filters.furnishing && filters.furnishing.length > 0) {
-        query = query.in('furnishing_status', filters.furnishing);
-      }
-
-      if (filters.minPrice) {
-        query = query.gte('price', filters.minPrice);
-      }
-
-      if (filters.maxPrice) {
-        query = query.lte('price', filters.maxPrice);
-      }
-
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,city.ilike.%${searchQuery}%,locality.ilike.%${searchQuery}%`);
-      }
-
-      // Apply Sorting
-      switch (sortBy) {
-        case 'price-low':
-          query = query.order('price', { ascending: true });
-          break;
-        case 'price-high':
-          query = query.order('price', { ascending: false });
-          break;
-        case 'newest':
-          query = query.order('created_at', { ascending: false });
-          break;
-        default:
-          query = query.order('created_at', { ascending: false });
-      }
-
-      // Pagination
-      const from = pageParam;
-      const to = from + PAGE_SIZE - 1;
-      query = query.range(from, to);
-
-      const { data, error, count } = await query;
-      if (error) throw error;
+      const count = prioritizedData?.[0]?.total_count || 0;
+      const nextOffset = offset + PAGE_SIZE;
       
       return {
-        properties: data?.map(transformProperty) || [],
-        nextPage: (count && to < count - 1) ? to + 1 : undefined,
+        properties: prioritizedData?.map(transformProperty) || [],
+        nextPage: (count && nextOffset < count) ? nextOffset : undefined,
       };
     },
     initialPageParam: 0,
@@ -350,27 +437,93 @@ export default function Properties() {
               </div>
             </div>
 
-            {/* Listing Type Tabs */}
-            <div className="flex gap-2 mt-4 overflow-x-auto pb-1 no-scrollbar">
-              {['rent', 'sale'].map((type) => (
-                <button
-                  key={type}
-                  onClick={() =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      listingType: prev.listingType === type ? undefined : (type as ListingType),
-                    }))
-                  }
-                  className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
-                    filters.listingType === type
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+            {/* Listing Type Tabs & Geospatial Controls */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mt-4">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full md:w-auto">
+                {['rent', 'sale'].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => {
+                      const newType = filters.listingType === type ? undefined : (type as ListingType);
+                      setFilters((prev) => ({
+                        ...prev,
+                        listingType: newType,
+                      }));
+                      // Update URL
+                      const params = new URLSearchParams(searchParams);
+                      if (newType) {
+                        params.set('type', newType);
+                      } else {
+                        params.delete('type');
+                      }
+                      setSearchParams(params);
+                    }}
+                    className={cn(
+                      'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
+                      filters.listingType === type
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    )}
+                  >
+                    {type === 'rent' ? 'For Rent' : 'For Sale'}
+                  </button>
+                ))}
+
+                {userCoords && (
+                  <div className="flex items-center gap-2 ml-4 border-l pl-4">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Radius</span>
+                    <div className="flex bg-secondary rounded-lg p-1">
+                      {[5, 10, 25, 50].map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setRadiusKm(r)}
+                          className={cn(
+                            'px-3 py-1 rounded-md text-xs font-medium transition-all',
+                            radiusKm === r 
+                              ? 'bg-background text-foreground shadow-sm' 
+                              : 'text-muted-foreground hover:text-foreground'
+                          )}
+                        >
+                          {r}km
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+                <div className="flex items-center gap-2">
+                  {locationLoading && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary animate-pulse">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                      <span className="text-xs font-medium">Locating...</span>
+                    </div>
                   )}
+                  {userCoords && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      <span className="text-xs font-medium">Near You</span>
+                    </div>
+                  )}
+                  {locationError && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
+                      <span className="text-xs font-medium">Location Off</span>
+                    </div>
+                  )}
+                </div>
+
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="bg-background border rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                 >
-                  {type === 'rent' ? 'For Rent' : 'For Sale'}
-                </button>
-              ))}
+                  <option value="relevance">Sort: Relevance</option>
+                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Price: High to Low</option>
+                  <option value="newest">Newest First</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -536,6 +689,15 @@ export default function Properties() {
                 >
                   <List className="w-5 h-5" />
                 </button>
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={cn(
+                    'p-2 transition-colors',
+                    viewMode === 'map' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
+                  )}
+                >
+                  <MapIcon className="w-5 h-5" />
+                </button>
               </div>
             </div>
           </div>
@@ -588,6 +750,7 @@ export default function Properties() {
               <PropertyMap 
                 properties={filteredProperties} 
                 center={mapCenter}
+                onBoundsChange={setMapBounds}
               />
             </div>
           ) : filteredProperties.length > 0 ? (
@@ -603,6 +766,7 @@ export default function Properties() {
                   key={`${property.id}-${index}`}
                   property={property}
                   variant={viewMode === 'list' ? 'horizontal' : 'default'}
+                  radiusKm={radiusKm}
                 />
               ))}
               
@@ -620,7 +784,7 @@ export default function Properties() {
               <p className="text-sm text-muted-foreground mb-6">
                 Try adjusting your filters or search criteria
               </p>
-              <Button onClick={clearFilters}>Clear All Filters</Button>
+              <Button onClick={clearFilters}>Clear all filters</Button>
             </div>
           )}
         </div>

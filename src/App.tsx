@@ -30,6 +30,8 @@ import Careers from "./pages/Careers";
 import Blog from "./pages/Blog";
 import Press from "./pages/Press";
 import { MobileNav } from "./components/layout/MobileNav";
+import { ScrollToTop } from "./components/layout/ScrollToTop";
+import { ScrollToTopOnNavigate } from "./components/layout/ScrollToTopOnNavigate";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +42,7 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <BrowserRouter>
+          <ScrollToTopOnNavigate />
           <div className="flex flex-col min-h-screen pb-16 lg:pb-0">
             <Routes>
               <Route path="/" element={<Index />} />
@@ -69,6 +72,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
             <MobileNav />
+            <ScrollToTop />
           </div>
         </BrowserRouter>
       </AuthProvider>

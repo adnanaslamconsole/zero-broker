@@ -19,16 +19,21 @@ import { Property } from '@/types/property';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useShortlist } from '@/hooks/useShortlist';
+import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 
 interface PropertyCardProps {
   property: Property;
   variant?: 'default' | 'horizontal';
+  radiusKm?: number;
 }
 
-export function PropertyCard({ property, variant = 'default' }: PropertyCardProps) {
+export function PropertyCard({ property, variant = 'default', radiusKm }: PropertyCardProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [isLiked, setIsLiked] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const { user } = useAuth();
+  const { isShortlisted, toggleShortlist } = useShortlist();
   const placeholderImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80';
 
   const formatPrice = (price: number) => {
@@ -85,6 +90,18 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
                   Verified
                 </Badge>
               )}
+              {property.distanceKm !== undefined && (
+                <Badge 
+                  variant={radiusKm && property.distanceKm <= radiusKm ? 'default' : 'secondary'} 
+                  className={cn(
+                    "gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1",
+                    radiusKm && property.distanceKm <= radiusKm ? "bg-green-500 hover:bg-green-600" : ""
+                  )}
+                >
+                  <MapPin className="w-3 h-3" />
+                  {property.distanceKm.toFixed(1)} km
+                </Badge>
+              )}
             </div>
 
             {/* Like Button */}
@@ -92,14 +109,18 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setIsLiked(!isLiked);
+                if (!user) {
+                  toast.error('Please login to shortlist properties');
+                  return;
+                }
+                toggleShortlist(property.id);
               }}
               className="absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-all shadow-md active:scale-90"
             >
               <Heart
                 className={cn(
                   'w-4.5 h-4.5 sm:w-5 sm:h-5 transition-colors',
-                  isLiked ? 'fill-destructive text-destructive' : 'text-muted-foreground'
+                  isShortlisted(property.id) ? 'fill-destructive text-destructive' : 'text-muted-foreground'
                 )}
               />
             </button>
@@ -215,6 +236,18 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
                 Verified
               </Badge>
             )}
+            {property.distanceKm !== undefined && (
+              <Badge 
+                variant={radiusKm && property.distanceKm <= radiusKm ? 'default' : 'secondary'} 
+                className={cn(
+                  "gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1",
+                  radiusKm && property.distanceKm <= radiusKm ? "bg-green-500 hover:bg-green-600" : ""
+                )}
+              >
+                <MapPin className="w-3 h-3" />
+                {property.distanceKm.toFixed(1)} km
+              </Badge>
+            )}
           </div>
 
           {/* Like Button */}
@@ -222,14 +255,18 @@ export function PropertyCard({ property, variant = 'default' }: PropertyCardProp
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setIsLiked(!isLiked);
+              if (!user) {
+                toast.error('Please login to shortlist properties');
+                return;
+              }
+              toggleShortlist(property.id);
             }}
             className="absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-all shadow-md active:scale-90"
           >
             <Heart
               className={cn(
                 'w-4.5 h-4.5 sm:w-5 sm:h-5 transition-colors',
-                isLiked ? 'fill-destructive text-destructive' : 'text-muted-foreground'
+                isShortlisted(property.id) ? 'fill-destructive text-destructive' : 'text-muted-foreground'
               )}
             />
           </button>

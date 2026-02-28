@@ -64,6 +64,9 @@ export interface Property {
   views: number;
   leads: number;
   
+  // Distance (if available)
+  distanceKm?: number;
+  
   // Timestamps
   createdAt: string;
   updatedAt: string;

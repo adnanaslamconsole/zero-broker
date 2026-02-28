@@ -2,10 +2,10 @@ import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap, Heart } from 'lucide-react';
+import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap, Heart, Building2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -13,13 +13,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { PropertyCard } from '@/components/property/PropertyCard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function Profile() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const defaultTab = searchParams.get('tab') || 'activity';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [demoAvatarUrl, setDemoAvatarUrl] = useState<string | null>(null);
+
+  const handleTabChange = (value: string) => {
+    setSearchParams({ tab: value });
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -145,17 +153,59 @@ export default function Profile() {
     queryFn: async () => {
       if (!user) return { reviews: 0, saved: 0 };
 
-      // In a real app, these would be real queries
-      // For now, we'll try to fetch if they exist, or return 0
       const [reviewsRes, savedRes] = await Promise.all([
         supabase.from('property_reviews').select('*', { count: 'exact', head: true }).eq('user_id', user.profile.id),
-        supabase.from('saved_properties').select('*', { count: 'exact', head: true }).eq('user_id', user.profile.id)
+        supabase.from('shortlists').select('*', { count: 'exact', head: true }).eq('user_id', user.profile.id)
       ]);
 
       return {
         reviews: reviewsRes.count || 0,
         saved: savedRes.count || 0
       };
+    },
+    enabled: !!user,
+  });
+
+  const { data: savedProperties, isLoading: savedLoading } = useQuery({
+    queryKey: ['shortlisted-properties', user?.profile.id, user?.profile.isDemo],
+    queryFn: async () => {
+      if (!user) return [];
+
+      // Handle demo users with localStorage and sample data
+      if (user.profile.isDemo) {
+        const demoShortlists = localStorage.getItem(`demo_shortlists_${user.profile.id}`);
+        const propertyIds = demoShortlists ? JSON.parse(demoShortlists) : [];
+        if (propertyIds.length === 0) return [];
+        
+        // Fetch real property details from Supabase for these IDs
+        const { data, error } = await supabase
+          .from('properties')
+          .select('*')
+          .in('id', propertyIds);
+        
+        if (error) throw error;
+        return data?.map(p => ({
+          ...p,
+          // Map DB columns to frontend Property type if needed
+          listingType: p.type,
+          propertyType: p.property_category,
+          bhk: p.bedrooms,
+          furnishing: p.furnishing_status,
+          carpetArea: p.area,
+        })) || [];
+      }
+
+      const { data, error } = await supabase
+        .from('shortlists')
+        .select(`
+          property_id,
+          properties (*)
+        `)
+        .eq('user_id', user.profile.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data.map(item => item.properties);
     },
     enabled: !!user,
   });
@@ -467,89 +517,141 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Recent Bookings */}
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold">Recent Activities</h3>
-                <Button variant="ghost" size="sm" onClick={() => navigate('/services')}>New Booking</Button>
-              </div>
+          {/* Right Content - Activities & Tabs */}
+          <div className="lg:col-span-8">
+            <Tabs defaultValue={defaultTab} onValueChange={handleTabChange} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-14 rounded-xl">
+                <TabsTrigger value="activity" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold">
+                  <Clock className="w-4 h-4" /> Activity
+                </TabsTrigger>
+                <TabsTrigger value="saved" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold">
+                  <Heart className="w-4 h-4" /> Saved Properties
+                </TabsTrigger>
+              </TabsList>
 
-              {bookings && bookings.length > 0 ? (
-                <div className="space-y-4">
-                  {bookings.map((booking) => (
-                    <div 
-                      key={booking.id} 
-                      className="group bg-card hover:bg-card/80 border border-border/50 rounded-xl p-4 flex flex-col sm:flex-row gap-4 transition-all hover:shadow-lg hover:border-primary/20"
-                    >
-                      <div className="w-full sm:w-32 h-32 sm:h-auto rounded-lg overflow-hidden shrink-0 relative">
-                        <img 
-                          src={booking.services?.image_url} 
-                          alt={booking.services?.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                          <span className="text-white text-xs font-medium">{booking.services?.name}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <h4 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{booking.services?.name}</h4>
-                              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                <MapPin className="w-3 h-3" /> {booking.city}
-                              </p>
+              <TabsContent value="activity" className="space-y-6">
+                {/* Recent Bookings */}
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold">Recent Bookings</h3>
+                    <Button variant="ghost" size="sm" onClick={() => navigate('/services')}>New Booking</Button>
+                  </div>
+
+                  {bookings && bookings.length > 0 ? (
+                    <div className="space-y-4">
+                      {bookings.map((booking) => (
+                        <div 
+                          key={booking.id} 
+                          className="group bg-card hover:bg-card/80 border border-border/50 rounded-xl p-4 flex flex-col sm:flex-row gap-4 transition-all hover:shadow-lg hover:border-primary/20"
+                        >
+                          <div className="w-full sm:w-32 h-32 sm:h-auto rounded-lg overflow-hidden shrink-0 relative">
+                            <img 
+                              src={booking.services?.image_url} 
+                              alt={booking.services?.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                              <span className="text-white text-xs font-medium">{booking.services?.name}</span>
                             </div>
-                            <Badge 
-                              variant={
-                                booking.status === 'confirmed' ? 'default' :
-                                booking.status === 'completed' ? 'secondary' :
-                                'outline'
-                              }
-                              className={
-                                booking.status === 'confirmed' ? 'bg-green-500 hover:bg-green-600' :
-                                booking.status === 'pending' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-200' : ''
-                              }
-                            >
-                              {booking.status}
-                            </Badge>
                           </div>
                           
-                          <p className="text-sm text-muted-foreground line-clamp-1 mb-3">
-                            {booking.address}
-                          </p>
-                        </div>
+                          <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  <h4 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{booking.services?.name}</h4>
+                                  <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                    <MapPin className="w-3 h-3" /> {booking.city}
+                                  </p>
+                                </div>
+                                <Badge 
+                                  variant={
+                                    booking.status === 'confirmed' ? 'default' :
+                                    booking.status === 'completed' ? 'secondary' :
+                                    'outline'
+                                  }
+                                  className={
+                                    booking.status === 'confirmed' ? 'bg-green-500 hover:bg-green-600' :
+                                    booking.status === 'pending' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-200' : ''
+                                  }
+                                >
+                                  {booking.status}
+                                </Badge>
+                              </div>
+                              
+                              <p className="text-sm text-muted-foreground line-clamp-1 mb-3">
+                                {booking.address}
+                              </p>
+                            </div>
 
-                        <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground border-t border-border/50 pt-3 mt-auto">
-                          <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
-                            <Calendar className="w-3 h-3" />
-                            {new Date(booking.booking_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                          <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
-                            <Clock className="w-3 h-3" />
-                            {booking.booking_time}
-                          </span>
+                            <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground border-t border-border/50 pt-3 mt-auto">
+                              <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
+                                <Calendar className="w-3 h-3" />
+                                {new Date(booking.booking_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                              <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
+                                <Clock className="w-3 h-3" />
+                                {booking.booking_time}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : (
+                    <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
+                      <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
+                        <Calendar className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">No bookings yet</h3>
+                      <p className="text-muted-foreground max-w-xs mx-auto mb-6">
+                        Book your first home service today and track it here.
+                      </p>
+                      <Button onClick={() => navigate('/services')}>
+                        Explore Services
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
-                  <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
-                    <Calendar className="w-8 h-8 text-muted-foreground" />
+              </TabsContent>
+
+              <TabsContent value="saved" className="space-y-6">
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold">Saved Properties</h3>
+                    <p className="text-sm text-muted-foreground">{savedProperties?.length || 0} properties</p>
                   </div>
-                  <h3 className="text-lg font-semibold mb-2">No bookings yet</h3>
-                  <p className="text-muted-foreground max-w-xs mx-auto mb-6">
-                    Book your first home service today and track it here.
-                  </p>
-                  <Button onClick={() => navigate('/services')}>
-                    Explore Services
-                  </Button>
+
+                  {savedLoading ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {[1, 2].map((i) => (
+                        <div key={i} className="h-64 rounded-2xl bg-muted animate-pulse" />
+                      ))}
+                    </div>
+                  ) : savedProperties && savedProperties.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {savedProperties.map((property: any) => (
+                        <PropertyCard key={property.id} property={property} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
+                      <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
+                        <Building2 className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">No saved properties</h3>
+                      <p className="text-muted-foreground max-w-xs mx-auto mb-6">
+                        Save properties you like to view them later.
+                      </p>
+                      <Button onClick={() => navigate('/properties')}>
+                        Browse Properties
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </TabsContent>
+            </Tabs>
+          </div>
           </div>
         </div>
       </main>
