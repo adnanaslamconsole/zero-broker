@@ -495,8 +495,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       // Clear demo session first
-      localStorage.removeItem('zerobroker-demo-session');
-      localStorage.removeItem('demo_user_meta');
+      try {
+        localStorage.removeItem('zerobroker-demo-session');
+        localStorage.removeItem('demo_user_meta');
+        // Clear any other potentially stuck session data
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase.auth.token') || key.includes('sb-') || key.includes('zerobroker'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+      } catch (e) {
+        console.error('Error clearing localStorage during logout:', e);
+      }
       
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
@@ -507,6 +520,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Logout error:', error);
       const err = error as Error;
       toast.error(err.message || 'Failed to logout');
+      // Even if signOut fails, we should still clear local state
+      setUser(null);
     } finally {
       // Ensure loading is cleared regardless of outcome
       setIsLoading(false);

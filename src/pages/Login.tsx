@@ -16,13 +16,26 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Login() {
-  const { loginWithOtp, verifyOtp, isLoading } = useAuth();
+  const { loginWithOtp, verifyOtp, isLoading, user } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [role, setRole] = useState<'tenant' | 'owner'>('tenant');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'method' | 'otp'>('method');
   const [timer, setTimer] = useState(0);
   const navigate = useNavigate();
+
+  // Redirect if already logged in or if user state changes (e.g. logout)
+  useEffect(() => {
+    if (user) {
+      navigate('/profile');
+    } else {
+      // Reset form if user is null (logged out)
+      setIdentifier('');
+      setOtp('');
+      setStep('method');
+      setError('');
+    }
+  }, [user, navigate]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
