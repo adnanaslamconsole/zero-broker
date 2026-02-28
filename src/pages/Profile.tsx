@@ -444,6 +444,10 @@ export default function Profile() {
 
         if (uploadError) {
           console.error(`Upload error for ${key}:`, uploadError);
+          // Special handling for missing bucket
+          if (uploadError.message?.includes('Bucket not found')) {
+            throw new Error(`Storage bucket 'kyc-documents' not found. Please create it in your Supabase dashboard or apply the necessary migrations.`);
+          }
           throw new Error(`Failed to upload ${key}: ${uploadError.message}`);
         }
         

@@ -82,7 +82,14 @@ export function Header() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.profile.id)
         .eq('is_read', false);
-      if (error) throw error;
+      
+      if (error) {
+        // If notifications table doesn't exist yet (404), return 0 gracefully
+        if (error.code === 'PGRST116' || error.message?.includes('not found')) {
+          return 0;
+        }
+        throw error;
+      }
       return count || 0;
     },
     enabled: !!user && !user.profile.isDemo,

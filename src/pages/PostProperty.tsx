@@ -204,7 +204,7 @@ export default function PostProperty() {
   const maxListings = subscriptionInfo?.plan?.max_listings || 0;
   const usedListings = subscriptionInfo?.used || 0;
   const isLimitReached = !!user && maxListings > 0 && usedListings >= maxListings;
-  const hasNoPlan = !!user && !isLoadingSubscription && !subscriptionInfo?.plan;
+  const hasNoPlan = !!user && !isLoadingSubscription && !subscriptionInfo?.plan && !user.profile.isDemo;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -244,7 +244,12 @@ export default function PostProperty() {
           .from('property-images')
           .upload(filePath, file);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          if (uploadError.message?.includes('Bucket not found')) {
+            throw new Error("Storage bucket 'property-images' not found. Please create it in your Supabase dashboard.");
+          }
+          throw uploadError;
+        }
 
         const { data: publicUrlData } = supabase.storage
           .from('property-images')
@@ -404,14 +409,24 @@ export default function PostProperty() {
                 </div>
                 <Progress value={(usedListings / maxListings) * 100} className="h-2 mb-2" />
                 {isLimitReached ? (
-                  <div className="flex items-center justify-between text-sm text-destructive mt-2 bg-destructive/5 p-2 rounded">
-                    <span className="flex items-center gap-2 font-medium">
-                      <AlertCircle className="w-4 h-4" />
-                      Limit Reached
-                    </span>
-                    <Link to="/plans" className="underline hover:text-destructive/80">
-                      Upgrade to post more
-                    </Link>
+                  <div className="flex flex-col gap-4 mt-2">
+                    <div className="flex items-center justify-between text-sm text-destructive bg-destructive/5 p-2 rounded">
+                      <span className="flex items-center gap-2 font-medium">
+                        <AlertCircle className="w-4 h-4" />
+                        Limit Reached
+                      </span>
+                      <Link to="/plans" className="underline hover:text-destructive/80">
+                        Upgrade to post more
+                      </Link>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="w-full border-primary text-primary hover:bg-primary/5"
+                      onClick={() => navigate('/plans')}
+                    >
+                      <Crown className="w-4 h-4 mr-2" />
+                      View Upgrade Plans
+                    </Button>
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
@@ -424,409 +439,439 @@ export default function PostProperty() {
         )}
 
         {/* Steps Indicator */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between relative">
-            <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-border -z-10" />
-            {steps.map((step) => (
-              <div 
-                key={step.id}
-                className={`flex flex-col items-center gap-2 bg-background px-4 ${
-                  step.id <= currentStep ? 'text-primary' : 'text-muted-foreground'
-                }`}
-              >
+        {!isLimitReached && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between relative">
+              <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-border -z-10" />
+              {steps.map((step) => (
                 <div 
-                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
-                    step.id < currentStep 
-                      ? 'bg-primary border-primary text-primary-foreground'
-                      : step.id === currentStep
-                      ? 'border-primary text-primary bg-background'
-                      : 'border-muted text-muted-foreground bg-background'
+                  key={step.id}
+                  className={`flex flex-col items-center gap-2 bg-background px-4 ${
+                    step.id <= currentStep ? 'text-primary' : 'text-muted-foreground'
                   }`}
                 >
-                  {step.id < currentStep ? <CheckCircle2 className="w-6 h-6" /> : <step.icon className="w-5 h-5" />}
+                  <div 
+                    className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                      step.id < currentStep 
+                        ? 'bg-primary border-primary text-primary-foreground'
+                        : step.id === currentStep
+                        ? 'border-primary text-primary bg-background'
+                        : 'border-muted text-muted-foreground bg-background'
+                    }`}
+                  >
+                    {step.id < currentStep ? <CheckCircle2 className="w-6 h-6" /> : <step.icon className="w-5 h-5" />}
+                  </div>
+                  <span className="text-sm font-medium hidden sm:block">{step.title}</span>
                 </div>
-                <span className="text-sm font-medium hidden sm:block">{step.title}</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        <Card className="border-border/50 shadow-lg">
-          <CardContent className="p-6 sm:p-8">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-                
-                {/* Step 1: Basic Info */}
-                {currentStep === 1 && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="space-y-6"
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <FormField
-                        control={form.control}
-                        name="type"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>I want to</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select type" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="rent">Rent Out</SelectItem>
-                                <SelectItem value="sale">Sell</SelectItem>
-                                <SelectItem value="pg">List as PG</SelectItem>
-                                <SelectItem value="commercial">List Commercial</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+        {!isLimitReached ? (
+          <Card className="border-border/50 shadow-lg">
+            <CardContent className="p-6 sm:p-8">
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+                  {/* Step 1: Basic Info */}
+                  {currentStep === 1 && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-6"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>I want to</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="rent">Rent Out</SelectItem>
+                                  <SelectItem value="sale">Sell</SelectItem>
+                                  <SelectItem value="pg">List as PG</SelectItem>
+                                  <SelectItem value="commercial">List Commercial</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                      <FormField
-                        control={form.control}
-                        name="property_category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Property Type</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select category" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="apartment">Apartment</SelectItem>
-                                <SelectItem value="villa">Villa / House</SelectItem>
-                                <SelectItem value="plot">Plot / Land</SelectItem>
-                                <SelectItem value="office">Office Space</SelectItem>
-                                <SelectItem value="shop">Shop / Showroom</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="title"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Property Title</FormLabel>
-                          <FormControl>
-                            <Input placeholder="e.g. 2 BHK Apartment in Koramangala" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            A catchy title attracts more views.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Description</FormLabel>
-                          <FormControl>
-                            <Textarea 
-                              placeholder="Describe your property (amenities, nearby landmarks, etc.)" 
-                              className="min-h-[120px]"
-                              {...field} 
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </motion.div>
-                )}
-
-                {/* Step 2: Location */}
-                {currentStep === 2 && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="space-y-6"
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <FormField
-                        control={form.control}
-                        name="city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <LocationSearch 
-                                value={field.value} 
-                                onChange={field.onChange}
-                                onLocationSelect={(loc) => {
-                                  setSelectedLocation({ lat: loc.lat, lon: loc.lon });
-                                  // Optionally auto-fill locality if available in loc.name
-                                }}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="locality"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Locality / Area</FormLabel>
-                            <FormControl>
-                              <Input placeholder="e.g. HSR Layout" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="address"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Full Address</FormLabel>
-                          <FormControl>
-                            <Textarea placeholder="Enter full address" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </motion.div>
-                )}
-
-                {/* Step 3: Details */}
-                {currentStep === 3 && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="space-y-6"
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <FormField
-                        control={form.control}
-                        name="bedrooms"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Bedrooms (BHK)</FormLabel>
-                            <FormControl>
-                              <Input type="number" placeholder="2" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="bathrooms"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Bathrooms</FormLabel>
-                            <FormControl>
-                              <Input type="number" placeholder="2" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="area"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Carpet Area (sq.ft)</FormLabel>
-                            <FormControl>
-                              <Input type="number" placeholder="1200" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="furnishing_status"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Furnishing Status</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select status" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="furnished">Fully Furnished</SelectItem>
-                              <SelectItem value="semi-furnished">Semi Furnished</SelectItem>
-                              <SelectItem value="unfurnished">Unfurnished</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="amenities"
-                      render={() => (
-                        <FormItem>
-                          <div className="mb-4">
-                            <FormLabel className="text-base">Amenities</FormLabel>
-                            <FormDescription>
-                              Select the amenities available at your property.
-                            </FormDescription>
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {amenitiesList.map((item) => (
-                              <FormField
-                                key={item}
-                                control={form.control}
-                                name="amenities"
-                                render={({ field }) => {
-                                  return (
-                                    <FormItem
-                                      key={item}
-                                      className="flex flex-row items-start space-x-3 space-y-0"
-                                    >
-                                      <FormControl>
-                                        <Checkbox
-                                          checked={field.value?.includes(item)}
-                                          onCheckedChange={(checked) => {
-                                            return checked
-                                              ? field.onChange([...(field.value || []), item])
-                                              : field.onChange(
-                                                  field.value?.filter(
-                                                    (value) => value !== item
-                                                  )
-                                                )
-                                          }}
-                                        />
-                                      </FormControl>
-                                      <FormLabel className="font-normal">
-                                        {item}
-                                      </FormLabel>
-                                    </FormItem>
-                                  )
-                                }}
-                              />
-                            ))}
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </motion.div>
-                )}
-
-                {/* Step 4: Pricing & Photos */}
-                {currentStep === 4 && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="space-y-6"
-                  >
-                    <FormField
-                      control={form.control}
-                      name="price"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Expected Price / Rent (₹)</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                              <Input type="number" className="pl-9" placeholder="25000" {...field} />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="space-y-4">
-                      <FormLabel>Property Photos</FormLabel>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        {imageUrls.map((url, index) => (
-                          <div key={index} className="relative group aspect-square rounded-lg overflow-hidden border border-border">
-                            <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => removeImage(index)}
-                              className="absolute top-1 right-1 bg-destructive text-destructive-foreground p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                        
-                        <label className="flex flex-col items-center justify-center aspect-square rounded-lg border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer">
-                          <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                          <span className="text-xs text-muted-foreground">Upload Photo</span>
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            multiple 
-                            className="hidden" 
-                            onChange={handleImageUpload}
-                          />
-                        </label>
+                        <FormField
+                          control={form.control}
+                          name="property_category"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Property Type</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select category" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="apartment">Apartment</SelectItem>
+                                  <SelectItem value="villa">Villa / House</SelectItem>
+                                  <SelectItem value="plot">Plot / Land</SelectItem>
+                                  <SelectItem value="office">Office Space</SelectItem>
+                                  <SelectItem value="shop">Shop / Showroom</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       </div>
-                      <FormDescription>
-                        Upload at least 1 photo. Max 10 photos allowed.
-                      </FormDescription>
-                    </div>
-                  </motion.div>
-                )}
 
-                {/* Navigation Buttons */}
-                <div className="flex justify-between pt-6 border-t border-border">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={prevStep}
-                    disabled={currentStep === 1 || isSubmitting}
-                  >
-                    Previous
-                  </Button>
-                  
-                  {currentStep < 4 ? (
-                    <Button type="button" onClick={nextStep}>
-                      Next Step
-                    </Button>
-                  ) : (
-                    <Button type="submit" disabled={isSubmitting || uploadingImages || isLimitReached || hasNoPlan}>
-                      {(isSubmitting || uploadingImages) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Post Property
-                    </Button>
+                      <FormField
+                        control={form.control}
+                        name="title"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Property Title</FormLabel>
+                            <FormControl>
+                              <Input placeholder="e.g. 2 BHK Apartment in Koramangala" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              A catchy title attracts more views.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                              <Textarea 
+                                placeholder="Describe your property (amenities, nearby landmarks, etc.)" 
+                                className="min-h-[120px]"
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </motion.div>
                   )}
+
+                  {/* Step 2: Location */}
+                  {currentStep === 2 && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-6"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="city"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>City</FormLabel>
+                              <FormControl>
+                                <LocationSearch 
+                                  value={field.value} 
+                                  onChange={field.onChange}
+                                  onLocationSelect={(loc) => {
+                                    setSelectedLocation({ lat: loc.lat, lon: loc.lon });
+                                  }}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="locality"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Locality / Area</FormLabel>
+                              <FormControl>
+                                <Input placeholder="e.g. HSR Layout" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="address"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Full Address</FormLabel>
+                            <FormControl>
+                              <Textarea placeholder="Enter full address" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </motion.div>
+                  )}
+
+                  {/* Step 3: Details */}
+                  {currentStep === 3 && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-6"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="bedrooms"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Bedrooms (BHK)</FormLabel>
+                              <FormControl>
+                                <Input type="number" placeholder="2" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="bathrooms"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Bathrooms</FormLabel>
+                              <FormControl>
+                                <Input type="number" placeholder="2" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="area"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Carpet Area (sq.ft)</FormLabel>
+                              <FormControl>
+                                <Input type="number" placeholder="1200" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="furnishing_status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Furnishing Status</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="furnished">Fully Furnished</SelectItem>
+                                <SelectItem value="semi-furnished">Semi Furnished</SelectItem>
+                                <SelectItem value="unfurnished">Unfurnished</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="amenities"
+                        render={() => (
+                          <FormItem>
+                            <div className="mb-4">
+                              <FormLabel className="text-base">Amenities</FormLabel>
+                              <FormDescription>
+                                Select the amenities available at your property.
+                              </FormDescription>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                              {amenitiesList.map((item) => (
+                                <FormField
+                                  key={item}
+                                  control={form.control}
+                                  name="amenities"
+                                  render={({ field }) => {
+                                    return (
+                                      <FormItem
+                                        key={item}
+                                        className="flex flex-row items-start space-x-3 space-y-0"
+                                      >
+                                        <FormControl>
+                                          <Checkbox
+                                            checked={field.value?.includes(item)}
+                                            onCheckedChange={(checked) => {
+                                              return checked
+                                                ? field.onChange([...(field.value || []), item])
+                                                : field.onChange(
+                                                    field.value?.filter(
+                                                      (value) => value !== item
+                                                    )
+                                                  )
+                                            }}
+                                          />
+                                        </FormControl>
+                                        <FormLabel className="font-normal">
+                                          {item}
+                                        </FormLabel>
+                                      </FormItem>
+                                    )
+                                  }}
+                                />
+                              ))}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </motion.div>
+                  )}
+
+                  {/* Step 4: Pricing & Photos */}
+                  {currentStep === 4 && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-6"
+                    >
+                      <FormField
+                        control={form.control}
+                        name="price"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Expected Price / Rent (₹)</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                <Input type="number" className="pl-9" placeholder="25000" {...field} />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="space-y-4">
+                        <FormLabel>Property Photos</FormLabel>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          {imageUrls.map((url, index) => (
+                            <div key={index} className="relative group aspect-square rounded-lg overflow-hidden border border-border">
+                              <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeImage(index)}
+                                className="absolute top-1 right-1 bg-destructive text-destructive-foreground p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                          
+                          <label className="flex flex-col items-center justify-center aspect-square rounded-lg border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer">
+                            <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                            <span className="text-xs text-muted-foreground">Upload Photo</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              multiple 
+                              className="hidden" 
+                              onChange={handleImageUpload}
+                            />
+                          </label>
+                        </div>
+                        <FormDescription>
+                          Upload at least 1 photo. Max 10 photos allowed.
+                        </FormDescription>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Navigation Buttons */}
+                  <div className="flex justify-between pt-6 border-t border-border">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={prevStep}
+                      disabled={currentStep === 1 || isSubmitting}
+                    >
+                      Previous
+                    </Button>
+                    
+                    {currentStep < 4 ? (
+                      <Button type="button" onClick={nextStep}>
+                        Next Step
+                      </Button>
+                    ) : (
+                      <Button type="submit" disabled={isSubmitting || uploadingImages || isLimitReached || hasNoPlan}>
+                        {(isSubmitting || uploadingImages) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Post Property
+                      </Button>
+                    )}
+                  </div>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-border/50 shadow-lg bg-muted/30">
+            <CardContent className="p-12 text-center">
+              <div className="flex flex-col items-center gap-4 max-w-md mx-auto">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                  <Crown className="w-8 h-8 text-primary" />
                 </div>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
+                <h2 className="text-2xl font-bold">Listing Limit Reached</h2>
+                <p className="text-muted-foreground">
+                  Your current plan ({subscriptionInfo?.plan?.name}) allows up to {maxListings} active property listing{maxListings !== 1 ? 's' : ''}. You have already used {usedListings} of them.
+                </p>
+                <Button 
+                  size="lg"
+                  className="w-full mt-4 shadow-lg shadow-primary/20"
+                  onClick={() => navigate('/plans')}
+                >
+                  Upgrade Plan to Post More
+                </Button>
+                <Button 
+                  variant="link" 
+                  className="text-muted-foreground"
+                  onClick={() => navigate('/properties')}
+                >
+                  Manage My Properties
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

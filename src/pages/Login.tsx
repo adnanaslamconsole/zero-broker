@@ -79,7 +79,7 @@ export default function Login() {
                 <p className="text-muted-foreground text-sm">
                   {step === 'email' 
                     ? 'Sign up or login to continue' 
-                    : `Enter the 6-digit code sent to ${loginMethod === 'email' ? email : phone}`
+                    : `Enter the 8-digit code sent to ${loginMethod === 'email' ? email : phone}`
                   }
                 </p>
                 {step === 'otp' && (
@@ -159,18 +159,20 @@ export default function Login() {
                 <div className="flex flex-col items-center justify-center space-y-4 py-4">
                   <div className="bg-secondary/20 p-4 rounded-2xl border border-border/50">
                     <InputOTP
-                      maxLength={6}
+                      maxLength={8}
                       value={otp}
                       onChange={(value) => setOtp(value)}
                       disabled={isLoading}
                     >
-                      <InputOTPGroup className="gap-2 sm:gap-3">
-                        <InputOTPSlot index={0} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={1} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={2} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={3} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={4} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
-                        <InputOTPSlot index={5} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                      <InputOTPGroup className="gap-2 sm:gap-2">
+                        <InputOTPSlot index={0} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={1} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={2} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={3} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={4} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={5} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={6} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={7} className="w-9 h-12 sm:w-11 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
                       </InputOTPGroup>
                     </InputOTP>
                   </div>
@@ -180,7 +182,7 @@ export default function Login() {
                   </div>
                 </div>
 
-                <Button type="submit" size="lg" className="w-full h-12 text-base font-bold shadow-lg shadow-primary/20" disabled={otp.length !== 6 || isLoading}>
+                <Button type="submit" size="lg" className="w-full h-12 text-base font-bold shadow-lg shadow-primary/20" disabled={otp.length !== 8 || isLoading}>
                   {isLoading ? 'Verifying Code...' : 'Verify & Sign In'}
                 </Button>
                 

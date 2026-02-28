@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('demo_user_meta', JSON.stringify(meta));
         }
         await new Promise(resolve => setTimeout(resolve, 1000));
-        toast.success('OTP sent! (Use 123456 for demo)');
+        toast.success('OTP sent! (Use 12345678 for demo)');
         return;
       }
 
@@ -194,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         identifier === '9999999999' || 
         identifier === 'paid-owner@demo.com';
 
-      if (isDemoUser && token === '123456') {
+      if (isDemoUser && token === '12345678') {
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Use different ID for paid demo owner to avoid seeing seeded public properties as their own

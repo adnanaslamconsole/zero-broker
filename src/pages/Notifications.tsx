@@ -32,7 +32,13 @@ export default function Notifications() {
         .eq('user_id', user.profile.id)
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        // If notifications table doesn't exist yet (404), return empty array gracefully
+        if (error.code === 'PGRST116' || error.message?.includes('not found')) {
+          return [];
+        }
+        throw error;
+      }
       return data as Notification[];
     },
     enabled: !!user && !user.profile.isDemo,
