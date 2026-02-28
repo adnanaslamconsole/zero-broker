@@ -11,11 +11,13 @@ export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'reject
 
 export interface KycDocument {
   id: string;
-  type: 'aadhaar' | 'pan' | 'passport' | 'driver-license' | 'other';
-  numberMasked: string;
+  user_id: string;
+  type: 'pan' | 'aadhaar' | 'selfie' | 'property_doc' | 'electricity_bill';
+  file_path: string;
   status: VerificationStatus;
-  uploadedAt: string;
-  verifiedAt?: string;
+  rejection_reason?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserProfile {
@@ -32,6 +34,9 @@ export interface UserProfile {
   isBlocked: boolean;
   isPaid?: boolean;
   isDemo?: boolean;
+  pan_number?: string;
+  aadhaar_number_masked?: string;
+  kyc_rejection_reason?: string;
   lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;

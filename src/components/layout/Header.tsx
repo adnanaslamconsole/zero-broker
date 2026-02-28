@@ -94,7 +94,7 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 lg:h-20">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
+          <Link to="/" className="flex items-center gap-2 group shrink-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center transition-transform group-hover:scale-105">
               <Home className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-primary-foreground" />
             </div>
@@ -197,21 +197,32 @@ export function Header() {
           </div>
 
           {/* Mobile Actions (Visible on small screens) */}
-          <div className="flex lg:hidden items-center gap-1 sm:gap-2">
-            {!user && (
+          <div className="flex lg:hidden items-center gap-1 sm:gap-2 ml-auto">
+            {user ? (
               <Button
                 variant="default"
                 size="sm"
-                className="h-8 px-3 text-[10px] font-bold uppercase tracking-wider shadow-sm mr-1"
+                className="h-8 px-2 sm:px-3 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5"
+                onClick={() => navigate('/profile')}
+              >
+                <span className="max-w-[70px] sm:max-w-[100px] truncate">
+                  {user.profile.name}
+                </span>
+              </Button>
+            ) : (
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 px-3 text-[10px] font-bold uppercase tracking-wider shadow-sm"
                 onClick={() => navigate('/login')}
               >
-                Login/Signup
+                Login
               </Button>
             )}
             <Button
               variant="ghost"
               size="icon"
-              className="relative touch-friendly"
+              className="relative touch-friendly shrink-0 h-9 w-9"
               onClick={() => navigate('/notifications')}
             >
               <Bell className="w-5 h-5" />

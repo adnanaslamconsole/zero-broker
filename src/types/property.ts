@@ -59,6 +59,8 @@ export interface Property {
   isPremium: boolean;
   isFeatured: boolean;
   isActive: boolean;
+  ownerTrustScore?: number;
+  ownerKycStatus?: 'unverified' | 'pending' | 'verified' | 'rejected';
   
   // Analytics
   views: number;
@@ -68,6 +70,30 @@ export interface Property {
   distanceKm?: number;
   
   // Timestamps
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OwnerAvailability {
+  id: string;
+  owner_id: string;
+  property_id: string;
+  available_day: number; // 0-6
+  start_time: string;
+  end_time: string;
+}
+
+export interface VisitBooking {
+  id: string;
+  property_id: string;
+  tenant_id: string;
+  owner_id: string;
+  visit_date: string;
+  visit_time: string;
+  payment_id?: string;
+  booking_status: 'pending' | 'confirmed' | 'completed' | 'no_show_tenant' | 'no_show_owner' | 'cancelled';
+  otp_code?: string;
+  refund_status: 'none' | 'pending' | 'completed' | 'failed' | 'converted_to_credit';
   createdAt: string;
   updatedAt: string;
 }

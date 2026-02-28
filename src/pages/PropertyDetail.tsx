@@ -23,6 +23,8 @@ import {
   Clock,
   Eye,
   Users,
+  TrendingUp,
+  AlertCircle,
 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -60,11 +62,13 @@ const transformProperty = (dbProperty: any): Property => ({
   isPremium: false,
   availableFrom: dbProperty.created_at, // Using created_at as fallback
   postedBy: 'owner', // Default
+  ownerId: dbProperty.owner_id,
+  ownerTrustScore: dbProperty.profiles?.trust_score || 100,
+  ownerKycStatus: dbProperty.profiles?.kyc_status || 'unverified',
   createdAt: dbProperty.created_at,
   updatedAt: dbProperty.updated_at,
   views: 0,
   leads: 0,
-  ownerId: dbProperty.owner_id,
   builtUpArea: dbProperty.area, // Fallback
   totalFloors: 0, // Not in DB yet
   floor: 0, // Not in DB yet
@@ -79,6 +83,7 @@ const transformProperty = (dbProperty: any): Property => ({
 });
 
 import { sampleProperties } from '@/data/sampleProperties';
+import { BookingDialog } from '@/components/property/BookingDialog';
 
 // Helper to check if string is valid UUID
 const isUUID = (str: string) => {
@@ -91,6 +96,7 @@ export default function PropertyDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
   const placeholderImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80';
 
   const { data: property, isLoading } = useQuery({
@@ -117,6 +123,18 @@ export default function PropertyDetail() {
     },
     enabled: Boolean(id),
   });
+
+  const getTrustScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
+    if (score >= 70) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+    return 'text-red-600 bg-red-50 border-red-200';
+  };
+
+  const getTrustScoreLabel = (score: number) => {
+    if (score >= 90) return 'Trusted';
+    if (score >= 70) return 'Moderate';
+    return 'Risky';
+  };
 
   if (isLoading) {
     return (
@@ -443,18 +461,39 @@ export default function PropertyDetail() {
                   </div>
                   <div>
                     <p className="font-bold text-foreground">Property Owner</p>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ShieldCheck className="w-4 h-4 text-success" />
-                      Verified Listing
+                    <div className="flex flex-col gap-1 mt-1">
+                      {property.ownerKycStatus === 'verified' && (
+                        <Badge variant="verified" className="w-fit py-0 h-5 text-[10px] gap-1">
+                          <ShieldCheck className="w-3 h-3" />
+                          Verified Owner
+                        </Badge>
+                      )}
+                      {property.ownerTrustScore !== undefined && (
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "w-fit py-0 h-5 text-[10px] gap-1 font-bold",
+                            getTrustScoreColor(property.ownerTrustScore)
+                          )}
+                        >
+                          <TrendingUp className="w-3 h-3" />
+                          {property.ownerTrustScore} {getTrustScoreLabel(property.ownerTrustScore)}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-3 mb-6">
-                  <Button variant="accent" size="lg" className="w-full gap-2 h-12 rounded-xl font-bold shadow-lg shadow-accent/20">
-                    <Phone className="w-4 h-4" />
-                    Contact Owner
-                  </Button>
+                  <Button 
+                  variant="accent" 
+                  size="lg" 
+                  className="w-full gap-2 h-12 rounded-xl font-bold shadow-lg shadow-accent/20"
+                  onClick={() => setIsBookingOpen(true)}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Book Verified Visit
+                </Button>
                   <Button variant="secondary" size="lg" className="w-full gap-2 h-12 rounded-xl font-bold">
                     <MessageCircle className="w-4 h-4" />
                     Send Message
@@ -530,6 +569,13 @@ export default function PropertyDetail() {
       </main>
 
       <Footer />
+      {property && (
+        <BookingDialog 
+          property={property} 
+          open={isBookingOpen} 
+          onOpenChange={setIsBookingOpen} 
+        />
+      )}
     </div>
   );
 }

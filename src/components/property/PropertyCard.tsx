@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Phone,
   MessageCircle,
+  TrendingUp,
+  AlertCircle,
 } from 'lucide-react';
 import { Property } from '@/types/property';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useShortlist } from '@/hooks/useShortlist';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
+import { BookingDialog } from './BookingDialog';
 
 interface PropertyCardProps {
   property: Property;
@@ -34,6 +37,7 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
   const [imgError, setImgError] = useState(false);
   const { user } = useAuth();
   const { isShortlisted, toggleShortlist } = useShortlist();
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
   const placeholderImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80';
 
   const formatPrice = (price: number) => {
@@ -57,6 +61,18 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
     e.preventDefault();
     e.stopPropagation();
     setCurrentImageIndex((prev) => (prev - 1 + property.images.length) % property.images.length);
+  };
+
+  const getTrustScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
+    if (score >= 70) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+    return 'text-red-600 bg-red-50 border-red-200';
+  };
+
+  const getTrustScoreLabel = (score: number) => {
+    if (score >= 90) return 'Trusted';
+    if (score >= 70) return 'Moderate';
+    return 'Risky';
   };
 
   if (variant === 'horizontal') {
@@ -87,7 +103,19 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
               {property.isVerified && (
                 <Badge variant="verified" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1">
                   <ShieldCheck className="w-3 h-3" />
-                  Verified
+                  Verified Owner
+                </Badge>
+              )}
+              {property.ownerTrustScore !== undefined && (
+                <Badge 
+                  variant="outline" 
+                  className={cn(
+                    "gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1 font-bold",
+                    getTrustScoreColor(property.ownerTrustScore)
+                  )}
+                >
+                  <TrendingUp className="w-3 h-3" />
+                  {property.ownerTrustScore} {getTrustScoreLabel(property.ownerTrustScore)}
                 </Badge>
               )}
               {property.distanceKm !== undefined && (
@@ -191,16 +219,29 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
 
             {/* Actions */}
             <div className="flex items-center gap-2 sm:gap-3 mt-5 pt-4 border-t border-border">
-              <Button variant="default" className="flex-1 h-10 sm:h-11 rounded-xl gap-2 font-bold shadow-lg shadow-primary/20">
-                <Phone className="w-4 h-4" />
-                Contact Owner
-              </Button>
+              <Button 
+                  variant="default" 
+                  className="flex-1 h-10 sm:h-11 rounded-xl gap-2 font-bold shadow-lg shadow-primary/20"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsBookingOpen(true);
+                  }}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Book Verified Visit
+                </Button>
               <Button variant="secondary" size="icon" className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl">
                 <MessageCircle className="w-4 h-4" />
               </Button>
             </div>
           </div>
         </Link>
+        <BookingDialog 
+          property={property} 
+          open={isBookingOpen} 
+          onOpenChange={setIsBookingOpen} 
+        />
       </motion.div>
     );
   }
@@ -233,7 +274,19 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
             {property.isVerified && (
               <Badge variant="verified" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1">
                 <ShieldCheck className="w-3 h-3" />
-                Verified
+                Verified Owner
+              </Badge>
+            )}
+            {property.ownerTrustScore !== undefined && (
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1 font-bold",
+                  getTrustScoreColor(property.ownerTrustScore)
+                )}
+              >
+                <TrendingUp className="w-3 h-3" />
+                {property.ownerTrustScore} {getTrustScoreLabel(property.ownerTrustScore)}
               </Badge>
             )}
             {property.distanceKm !== undefined && (
@@ -330,9 +383,17 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
 
           {/* Actions - Touch optimized */}
           <div className="grid grid-cols-4 gap-2 mt-5">
-            <Button variant="default" className="col-span-3 h-10 sm:h-11 rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-primary/20 gap-2">
-              <Phone className="w-3.5 h-3.5" />
-              Contact Owner
+            <Button 
+              variant="default" 
+              className="col-span-3 h-10 sm:h-11 rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-primary/20 gap-2"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsBookingOpen(true);
+              }}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Book Verified Visit
             </Button>
             <Button variant="secondary" size="icon" className="h-10 sm:h-11 w-full rounded-xl">
               <MessageCircle className="w-4 h-4" />
@@ -340,6 +401,11 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
           </div>
         </div>
       </Link>
+      <BookingDialog 
+        property={property} 
+        open={isBookingOpen} 
+        onOpenChange={setIsBookingOpen} 
+      />
     </motion.div>
   );
 }

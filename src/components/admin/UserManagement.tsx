@@ -54,6 +54,12 @@ export function UserManagement() {
     },
   });
 
+  const getTrustScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
+    if (score >= 70) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+    return 'text-red-600 bg-red-50 border-red-200';
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
@@ -74,7 +80,8 @@ export function UserManagement() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
+              <TableHead>Trust Score</TableHead>
+              <TableHead>KYC Status</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -82,13 +89,13 @@ export function UserManagement() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
             ) : users?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   No users found
                 </TableCell>
               </TableRow>
@@ -98,8 +105,20 @@ export function UserManagement() {
                   <TableCell className="font-medium">{user.name || 'N/A'}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {user.primary_role || 'tenant'}
+                    <Badge variant="outline" className={getTrustScoreColor(user.trust_score || 0)}>
+                      {user.trust_score || 100}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge 
+                      variant={
+                        user.kyc_status === 'verified' ? 'default' : 
+                        user.kyc_status === 'pending' ? 'secondary' : 
+                        'outline'
+                      }
+                      className={user.kyc_status === 'verified' ? 'bg-green-500 hover:bg-green-600' : ''}
+                    >
+                      {user.kyc_status || 'unverified'}
                     </Badge>
                   </TableCell>
                   <TableCell>

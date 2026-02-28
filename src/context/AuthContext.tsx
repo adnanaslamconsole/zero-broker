@@ -19,28 +19,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setIsLoading(false);
+    let mounted = true;
+
+    // Check active session on mount
+    const initializeAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        if (session?.user && mounted) {
+          await fetchProfile(session.user.id);
+        } else if (mounted) {
+          // Check for demo user session in localStorage
+          const demoSession = localStorage.getItem('zerobroker-demo-session');
+          if (demoSession) {
+            const profile = JSON.parse(demoSession);
+            setUser({
+              profile,
+              savedSearches: [],
+              favorites: [],
+              recentActivity: [],
+            });
+          }
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+        if (mounted) setIsLoading(false);
       }
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.user) {
+          await fetchProfile(session.user.id);
+        }
+      } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        localStorage.removeItem('zerobroker-demo-session');
         setIsLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
@@ -67,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           kycDocuments: [], // In a real app, fetch these separately
           trustScore: profile.trust_score || 0,
           isBlocked: profile.is_blocked || false,
+          isDemo: profile.id === '00000000-0000-0000-0000-000000000000' || profile.id === 'd0000000-0000-0000-0000-000000000001',
           createdAt: profile.created_at,
           updatedAt: profile.updated_at,
         };
@@ -114,9 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       let error;
+      const cleanIdentifier = identifier.trim().toLowerCase();
+
       if (type === 'email') {
         const { error: err } = await supabase.auth.signInWithOtp({
-          email: identifier,
+          email: cleanIdentifier,
           options: {
             shouldCreateUser: true,
             data: {
@@ -204,6 +238,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           recentActivity: [],
         });
         
+        // Persist demo session for reloads
+        localStorage.setItem('zerobroker-demo-session', JSON.stringify(mockProfile));
+        
         // Sync offline draft for demo user
         offlineStorage.syncDraftWithUser(mockProfile.id);
         
@@ -213,16 +250,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       let error;
+      const cleanIdentifier = identifier.trim().toLowerCase();
+
       if (type === 'email') {
-        const { error: err } = await supabase.auth.verifyOtp({
-          email: identifier,
+        // Try magiclink first (standard for signInWithOtp)
+        let { error: err } = await supabase.auth.verifyOtp({
+          email: cleanIdentifier,
           token,
-          type: 'email',
+          type: 'magiclink',
         });
-        error = err;
+        
+        if (err) {
+          // If magiclink fails, it might be a new user signup confirmation
+          const { error: signupErr } = await supabase.auth.verifyOtp({
+            email: cleanIdentifier,
+            token,
+            type: 'signup',
+          });
+          
+          if (signupErr) {
+            // Some older or specific configurations might use 'email' type
+            const { error: emailErr } = await supabase.auth.verifyOtp({
+              email: cleanIdentifier,
+              token,
+              type: 'email',
+            });
+            
+            if (emailErr) {
+              // If all fail, return the most descriptive error
+              error = err || signupErr || emailErr;
+            } else {
+              error = null;
+            }
+          } else {
+            error = null;
+          }
+        } else {
+          error = null;
+        }
       } else {
         const { error: err } = await supabase.auth.verifyOtp({
-          phone: identifier,
+          phone: identifier, // Phone numbers shouldn't be lowercased
           token,
           type: 'sms',
         });
@@ -244,8 +312,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
+      // Clear demo session first
+      localStorage.removeItem('zerobroker-demo-session');
+      localStorage.removeItem('demo_user_meta');
+      
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      
       setUser(null);
       toast.success('Logged out successfully');
     } catch (error) {

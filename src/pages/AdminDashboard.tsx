@@ -7,6 +7,7 @@ import { AdminOverview } from '@/components/admin/AdminOverview';
 import { UserManagement } from '@/components/admin/UserManagement';
 import { ListingModeration } from '@/components/admin/ListingModeration';
 import { RevenueAnalytics } from '@/components/admin/RevenueAnalytics';
+import { KycVerification } from '@/components/admin/KycVerification';
 import { BlogManager } from '@/components/admin/BlogManager';
 import { useAuth } from '@/context/AuthContext';
 import { ShieldAlert } from 'lucide-react';
@@ -66,6 +67,7 @@ export default function AdminDashboard() {
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="users">User Management</TabsTrigger>
+              <TabsTrigger value="verification">Verification KYC</TabsTrigger>
               <TabsTrigger value="listings">Listing Moderation</TabsTrigger>
               <TabsTrigger value="revenue">Revenue & Analytics</TabsTrigger>
               <TabsTrigger value="blog">Blog & Content</TabsTrigger>
@@ -77,6 +79,10 @@ export default function AdminDashboard() {
 
             <TabsContent value="users" className="space-y-4">
               <UserManagement />
+            </TabsContent>
+
+            <TabsContent value="verification" className="space-y-4">
+              <KycVerification />
             </TabsContent>
 
             <TabsContent value="listings" className="space-y-4">

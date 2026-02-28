@@ -6,7 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Mail, Clock } from 'lucide-react';
+import { Phone, Mail, Clock, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-react';
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 
 export default function Login() {
   const { loginWithOtp, verifyOtp, isLoading } = useAuth();
@@ -31,7 +36,7 @@ export default function Login() {
 
   const handleSendOtp = async (e: FormEvent) => {
     e.preventDefault();
-    const identifier = loginMethod === 'email' ? email : phone;
+    const identifier = loginMethod === 'email' ? email.trim().toLowerCase() : phone.trim();
     if (!identifier) return;
 
     await loginWithOtp(identifier, loginMethod, undefined, role);
@@ -41,17 +46,23 @@ export default function Login() {
 
   const handleResendOtp = async () => {
     if (timer > 0) return;
-    const identifier = loginMethod === 'email' ? email : phone;
+    const identifier = loginMethod === 'email' ? email.trim().toLowerCase() : phone.trim();
     await loginWithOtp(identifier, loginMethod, undefined, role);
     setTimer(60);
   };
 
   const handleVerifyOtp = async (e: FormEvent) => {
     e.preventDefault();
-    const identifier = loginMethod === 'email' ? email : phone;
+    const identifier = loginMethod === 'email' ? email.trim().toLowerCase() : phone.trim();
     if (!identifier || !otp) return;
-    await verifyOtp(identifier, otp, loginMethod);
-    navigate('/profile');
+    
+    try {
+      await verifyOtp(identifier, otp, loginMethod);
+      navigate('/profile');
+    } catch (error) {
+      // Error is handled in AuthContext toast
+      setOtp(''); // Clear OTP on failure
+    }
   };
 
   return (
@@ -64,12 +75,19 @@ export default function Login() {
               <h1 className="text-3xl font-display font-bold text-foreground">
                 {step === 'email' ? 'Join ZeroBroker' : 'Verify & Login'}
               </h1>
-              <p className="text-muted-foreground text-sm">
-                {step === 'email' 
-                  ? 'Sign up or login to continue' 
-                  : `Enter the OTP sent to ${loginMethod === 'email' ? email : phone}`
-                }
-              </p>
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-muted-foreground text-sm">
+                  {step === 'email' 
+                    ? 'Sign up or login to continue' 
+                    : `Enter the 6-digit code sent to ${loginMethod === 'email' ? email : phone}`
+                  }
+                </p>
+                {step === 'otp' && (
+                  <div className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                    <Clock className="w-3 h-3" /> Valid for 15 minutes
+                  </div>
+                )}
+              </div>
             </div>
 
             {step === 'email' ? (
@@ -137,51 +155,76 @@ export default function Login() {
                 </Button>
               </form>
             ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Enter OTP</label>
-                  <Input
-                    type="text"
-                    placeholder="123456"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    required
-                    className="h-12 text-center text-2xl tracking-widest bg-secondary/30 border-border/50 focus:border-primary transition-all font-mono"
-                    maxLength={6}
-                  />
+              <form onSubmit={handleVerifyOtp} className="space-y-6">
+                <div className="flex flex-col items-center justify-center space-y-4 py-4">
+                  <div className="bg-secondary/20 p-4 rounded-2xl border border-border/50">
+                    <InputOTP
+                      maxLength={6}
+                      value={otp}
+                      onChange={(value) => setOtp(value)}
+                      disabled={isLoading}
+                    >
+                      <InputOTPGroup className="gap-2 sm:gap-3">
+                        <InputOTPSlot index={0} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={1} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={2} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={3} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={4} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                        <InputOTPSlot index={5} className="w-10 h-12 sm:w-12 sm:h-14 text-xl sm:text-2xl font-bold rounded-xl border-2 focus:border-primary shadow-sm" />
+                      </InputOTPGroup>
+                    </InputOTP>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-secondary/30 px-3 py-1.5 rounded-lg border border-border/50">
+                    <ShieldCheck className="w-3 h-3 text-green-500" /> Secure cryptographically generated code
+                  </div>
                 </div>
-                <Button type="submit" size="lg" className="w-full text-base font-semibold" disabled={otp.length !== 6 || isLoading}>
-                  {isLoading ? 'Verifying...' : 'Verify & Login'}
+
+                <Button type="submit" size="lg" className="w-full h-12 text-base font-bold shadow-lg shadow-primary/20" disabled={otp.length !== 6 || isLoading}>
+                  {isLoading ? 'Verifying Code...' : 'Verify & Sign In'}
                 </Button>
                 
-                <div className="flex flex-col gap-3 mt-4">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="w-full"
-                    onClick={handleResendOtp}
-                    disabled={timer > 0 || isLoading}
-                  >
-                    {timer > 0 ? (
-                      <span className="flex items-center gap-2 text-muted-foreground">
-                        <Clock className="w-4 h-4" /> Resend in {timer}s
-                      </span>
-                    ) : (
-                      'Resend OTP'
-                    )}
-                  </Button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('email');
-                      setOtp('');
-                      setTimer(0);
-                    }}
-                    className="w-full text-sm font-medium text-primary hover:text-primary/80 transition-colors py-2"
-                  >
-                    Change {loginMethod === 'email' ? 'email' : 'number'}
-                  </button>
+                <div className="flex flex-col gap-2 pt-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-9 px-3 font-medium text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setStep('email');
+                        setOtp('');
+                        setTimer(0);
+                      }}
+                      disabled={isLoading}
+                    >
+                      <ArrowLeft className="w-3 h-3 mr-1.5" /> Back to {loginMethod === 'email' ? 'email' : 'phone'}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-9 px-3 font-semibold text-primary hover:text-primary hover:bg-primary/5"
+                      onClick={handleResendOtp}
+                      disabled={timer > 0 || isLoading}
+                    >
+                      {timer > 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-3 h-3" /> Resend in {timer}s
+                        </span>
+                      ) : (
+                        'Resend OTP'
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="flex items-start gap-2 p-3 bg-muted/30 rounded-xl border border-border/40 mt-2">
+                    <AlertCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      If you don't see the email, please check your spam folder or try resending. The code is only valid for 15 minutes.
+                    </p>
+                  </div>
                 </div>
               </form>
             )}

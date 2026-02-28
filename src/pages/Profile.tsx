@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap, Heart, Building2 } from 'lucide-react';
+import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Shield, Phone, Mail, User, Upload, Trash2, CheckCircle2, Crown, Zap, Heart, Building2, TrendingUp, ShieldCheck, AlertCircle, Plus, Info } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { BookingOTPDialog } from '@/components/property/BookingOTPDialog';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -35,6 +37,8 @@ export default function Profile() {
   };
 
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedBookingForOTP, setSelectedBookingForOTP] = useState<any>(null);
+  const [isOTPOpen, setIsOTPOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editMobile, setEditMobile] = useState('');
 
@@ -86,20 +90,37 @@ export default function Profile() {
   };
 
 
-  const { data: bookings, isLoading: bookingsLoading } = useQuery({
+  const { data: bookings, isLoading: bookingsLoading, refetch: refetchBookings } = useQuery({
     queryKey: ['my-bookings'],
     queryFn: async () => {
-      if (!user || user.profile.isDemo) return [];
+      if (!user) return [];
+      
+      // Handle demo user with mock bookings
+      if (user.profile.isDemo) {
+        return [
+          {
+            id: 'demo-1',
+            property_id: 'prop-1',
+            tenant_id: user.profile.id,
+            owner_id: 'owner-1',
+            visit_date: new Date().toISOString().split('T')[0],
+            visit_time: '10:00 AM',
+            booking_status: 'confirmed',
+            properties: { title: 'Modern Apartment in Downtown', address: '123 Main St, City' }
+          }
+        ];
+      }
+
       const { data, error } = await supabase
-        .from('service_bookings')
-        .select('*, services(name, image_url)')
-        .eq('user_id', user.profile.id)
-        .order('created_at', { ascending: false });
+        .from('visit_bookings')
+        .select('*, properties(title, address)')
+        .or(`tenant_id.eq.${user.profile.id},owner_id.eq.${user.profile.id}`)
+        .order('visit_date', { ascending: false });
       
       if (error) throw error;
       return data;
     },
-    enabled: !!user && !user.profile.isDemo,
+    enabled: !!user,
   });
 
   const { data: subscriptionInfo, isLoading: isLoadingSubscription } = useQuery({
@@ -149,9 +170,20 @@ export default function Profile() {
 
   // Fetch real counts for stats grid
   const { data: extraStats } = useQuery({
-    queryKey: ['profile-extra-stats', user?.profile.id],
+    queryKey: ['profile-extra-stats', user?.profile.id, user?.profile.isDemo],
     queryFn: async () => {
       if (!user) return { reviews: 0, saved: 0 };
+
+      // Handle demo users with localStorage
+      if (user.profile.isDemo) {
+        const demoShortlists = localStorage.getItem(`demo_shortlists_${user.profile.id}`);
+        const savedCount = demoShortlists ? JSON.parse(demoShortlists).length : 0;
+        
+        return {
+          reviews: 0, // Demo users don't have reviews yet
+          saved: savedCount
+        };
+      }
 
       const [reviewsRes, savedRes] = await Promise.all([
         supabase.from('property_reviews').select('*', { count: 'exact', head: true }).eq('user_id', user.profile.id),
@@ -296,6 +328,204 @@ export default function Profile() {
     }
   };
 
+  const getTrustScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
+    if (score >= 70) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+    return 'text-red-600 bg-red-50 border-red-200';
+  };
+
+  const getTrustScoreLabel = (score: number) => {
+    if (score >= 90) return 'Trusted';
+    if (score >= 70) return 'Moderate';
+    return 'Risky';
+  };
+
+  const [kycForm, setKycForm] = useState({
+    fullName: '',
+    panNumber: '',
+    aadhaarNumber: '',
+  });
+
+  const [kycFiles, setKycFiles] = useState<{
+    selfie: File | null;
+    propertyDoc: File | null;
+    electricityBill: File | null;
+  }>({
+    selfie: null,
+    propertyDoc: null,
+    electricityBill: null,
+  });
+
+  const selfieInputRef = useRef<HTMLInputElement>(null);
+  const propertyDocInputRef = useRef<HTMLInputElement>(null);
+  const electricityBillInputRef = useRef<HTMLInputElement>(null);
+
+  const handleKycFileChange = (type: keyof typeof kycFiles, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setKycFiles(prev => ({ ...prev, [type]: file }));
+      toast.success(`${file.name} selected`);
+    }
+  };
+
+  const [availableDays, setAvailableDays] = useState<string[]>(['Sat', 'Sun']);
+  const [timeSlots, setTimeSlots] = useState([
+    { id: '1', slot: '10:00 AM - 12:00 PM', active: true },
+    { id: '2', slot: '02:00 PM - 04:00 PM', active: true },
+    { id: '3', slot: '04:00 PM - 06:00 PM', active: false },
+    { id: '4', slot: '06:00 PM - 08:00 PM', active: false },
+  ]);
+
+  const { data: ownerAvailabilityData } = useQuery({
+    queryKey: ['owner-availability-settings', user?.profile.id],
+    queryFn: async () => {
+      if (!user || user.profile.isDemo) return null;
+      const { data, error } = await supabase
+        .from('owner_availability')
+        .select('*')
+        .eq('owner_id', user.profile.id)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  useEffect(() => {
+    if (ownerAvailabilityData) {
+      setAvailableDays(ownerAvailabilityData.available_days || []);
+      if (ownerAvailabilityData.time_slots) {
+        setTimeSlots(prev => prev.map(s => ({
+          ...s,
+          active: ownerAvailabilityData.time_slots.includes(s.slot)
+        })));
+      }
+    }
+  }, [ownerAvailabilityData]);
+
+  const toggleDay = (day: string) => {
+    setAvailableDays(prev => 
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
+  };
+
+  const toggleSlot = (id: string) => {
+    setTimeSlots(prev => prev.map(slot => 
+      slot.id === id ? { ...slot, active: !slot.active } : slot
+    ));
+  };
+
+  const submitKycMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error('Not authenticated');
+      
+      // Handle demo user
+      if (user.profile.isDemo) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        return;
+      }
+
+      // 1. Upload files to Supabase Storage
+      const uploadPromises = Object.entries(kycFiles).map(async ([key, file]) => {
+        if (!file) return null;
+        
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user.profile.id}/${key}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        // Ensure bucket exists or handle error
+        const { error: uploadError } = await supabase.storage
+          .from('kyc-documents')
+          .upload(filePath, file, {
+            upsert: true,
+            contentType: file.type
+          });
+
+        if (uploadError) {
+          console.error(`Upload error for ${key}:`, uploadError);
+          throw new Error(`Failed to upload ${key}: ${uploadError.message}`);
+        }
+        
+        return { key, filePath };
+      });
+
+      const uploadedFiles = await Promise.all(uploadPromises);
+
+      // 2. Update profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ 
+          kyc_status: 'pending',
+          pan_number: kycForm.panNumber,
+          aadhaar_number_masked: kycForm.aadhaarNumber.replace(/\d(?=\d{4})/g, '*')
+        })
+        .eq('id', user.profile.id);
+
+      if (profileError) throw profileError;
+
+      // 3. Create kyc_documents entries
+      const kycDocs = uploadedFiles
+        .filter(f => f !== null)
+        .map(f => ({
+          user_id: user.profile.id,
+          document_type: f!.key === 'propertyDoc' ? 'property_doc' : (f!.key === 'electricityBill' ? 'electricity_bill' : f!.key),
+          file_path: f!.filePath,
+          status: 'pending'
+        }));
+
+      if (kycDocs.length > 0) {
+        const { error: docsError } = await supabase
+          .from('kyc_documents')
+          .insert(kycDocs);
+        
+        if (docsError) throw docsError;
+      }
+    },
+    onSuccess: () => {
+      toast.success('KYC documents submitted for verification!');
+      // Reset form and files
+      setKycForm({ fullName: '', panNumber: '', aadhaarNumber: '' });
+      setKycFiles({ selfie: null, propertyDoc: null, electricityBill: null });
+      // Invalidate queries to update UI
+      refetchBookings(); // Using this as a proxy to refresh profile data if needed, or ideally invalidate 'auth-user'
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to submit KYC');
+    }
+  });
+
+  const saveAvailabilityMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error('Not authenticated');
+      
+      // Handle demo user
+      if (user.profile.isDemo) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        return;
+      }
+
+      const activeSlots = timeSlots.filter(s => s.active).map(s => s.slot);
+      
+      const { error } = await supabase
+        .from('owner_availability')
+        .upsert({ 
+          owner_id: user.profile.id,
+          available_days: availableDays,
+          time_slots: activeSlots,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Availability settings saved!');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to save availability');
+    }
+  });
+
   if (!user) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -373,14 +603,31 @@ export default function Profile() {
                 <h2 className="text-2xl font-bold text-foreground">{user.profile.name}</h2>
                 <p className="text-sm text-muted-foreground mb-4">{user.profile.email}</p>
                 
-                <div className="flex gap-2 justify-center">
-                  <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary uppercase text-[10px] tracking-wider">
-                    {user.profile.roles?.[0] || 'Member'}
-                  </Badge>
-                  {user.profile.kycStatus === 'verified' && (
-                    <Badge variant="default" className="bg-green-500 hover:bg-green-600 border-transparent gap-1">
-                      <Shield className="w-3 h-3" /> Verified
+                <div className="flex flex-col gap-2 items-center">
+                  <div className="flex gap-2 justify-center">
+                    <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary uppercase text-[10px] tracking-wider">
+                      {user.profile.roles?.[0] || 'Member'}
                     </Badge>
+                    <Badge variant={user.profile.kycStatus === 'verified' ? 'verified' : 'secondary'} className="gap-1">
+                      {user.profile.kycStatus === 'verified' ? (
+                        <>
+                          <ShieldCheck className="w-3 h-3" /> Verified Owner
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-3 h-3" /> Unverified
+                        </>
+                      )}
+                    </Badge>
+                  </div>
+                  <Badge variant="outline" className={cn("gap-1 font-bold", getTrustScoreColor(user.profile.trustScore))}>
+                    <TrendingUp className="w-3 h-3" />
+                    {user.profile.trustScore} {getTrustScoreLabel(user.profile.trustScore)}
+                  </Badge>
+                  {user.profile.kycStatus !== 'verified' && (
+                    <Button variant="link" size="sm" className="h-auto p-0 text-primary font-bold text-xs" onClick={() => handleTabChange('verification')}>
+                      Complete KYC to list properties →
+                    </Button>
                   )}
                 </div>
               </div>
@@ -519,13 +766,19 @@ export default function Profile() {
 
           {/* Right Content - Activities & Tabs */}
           <div className="lg:col-span-8">
-            <Tabs defaultValue={defaultTab} onValueChange={handleTabChange} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-14 rounded-xl">
-                <TabsTrigger value="activity" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold">
+            <Tabs value={defaultTab} onValueChange={handleTabChange} className="w-full">
+              <TabsList className="grid w-full grid-cols-3 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-14 rounded-xl">
+                <TabsTrigger value="activity" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
                   <Clock className="w-4 h-4" /> Activity
                 </TabsTrigger>
-                <TabsTrigger value="saved" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold">
-                  <Heart className="w-4 h-4" /> Saved Properties
+                <TabsTrigger value="saved" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                  <Heart className="w-4 h-4" /> Saved
+                </TabsTrigger>
+                <TabsTrigger value="verification" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                  <ShieldCheck className="w-4 h-4" /> Verification
+                </TabsTrigger>
+                <TabsTrigger value="availability" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
+                  <Calendar className="w-4 h-4" /> Availability
                 </TabsTrigger>
               </TabsList>
 
@@ -559,40 +812,62 @@ export default function Profile() {
                             <div>
                               <div className="flex justify-between items-start mb-2">
                                 <div>
-                                  <h4 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{booking.services?.name}</h4>
+                                  <h4 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{booking.properties?.title || 'Property Visit'}</h4>
                                   <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" /> {booking.city}
+                                    <MapPin className="w-3 h-3" /> {booking.properties?.address || 'Location'}
                                   </p>
                                 </div>
                                 <Badge 
                                   variant={
-                                    booking.status === 'confirmed' ? 'default' :
-                                    booking.status === 'completed' ? 'secondary' :
+                                    booking.booking_status === 'confirmed' ? 'default' :
+                                    booking.booking_status === 'completed' ? 'secondary' :
                                     'outline'
                                   }
                                   className={
-                                    booking.status === 'confirmed' ? 'bg-green-500 hover:bg-green-600' :
-                                    booking.status === 'pending' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-200' : ''
+                                    booking.booking_status === 'confirmed' ? 'bg-green-500 hover:bg-green-600' :
+                                    booking.booking_status === 'pending' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-200' : ''
                                   }
                                 >
-                                  {booking.status}
+                                  {booking.booking_status}
                                 </Badge>
                               </div>
                               
                               <p className="text-sm text-muted-foreground line-clamp-1 mb-3">
-                                {booking.address}
+                                {booking.properties?.address}
                               </p>
                             </div>
 
                             <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground border-t border-border/50 pt-3 mt-auto">
                               <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
                                 <Calendar className="w-3 h-3" />
-                                {new Date(booking.booking_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {new Date(booking.visit_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                               </span>
                               <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
                                 <Clock className="w-3 h-3" />
-                                {booking.booking_time}
+                                {booking.visit_time}
                               </span>
+                              {booking.booking_status === 'confirmed' && booking.tenant_id === user.profile.id && (
+                                <Button 
+                                  size="sm" 
+                                  variant="default" 
+                                  className="ml-auto h-7 px-3 text-[10px] font-bold rounded-lg gap-1 shadow-md shadow-primary/20"
+                                  onClick={() => {
+                                    setSelectedBookingForOTP({
+                                      id: booking.id,
+                                      propertyTitle: booking.properties?.title || 'Property Visit',
+                                      date: new Date(booking.visit_date).toLocaleDateString(),
+                                      time: booking.visit_time,
+                                      address: booking.properties?.address || '',
+                                      tenant_id: booking.tenant_id,
+                                      owner_id: booking.owner_id
+                                    });
+                                    setIsOTPOpen(true);
+                                  }}
+                                >
+                                  <ShieldCheck className="w-3 h-3" />
+                                  Verify Visit
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -650,12 +925,279 @@ export default function Profile() {
                   )}
                 </div>
               </TabsContent>
+              <TabsContent value="availability" className="space-y-6">
+                 <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                   <div className="flex items-center justify-between mb-6">
+                     <div className="flex items-center gap-3">
+                       <div className="p-3 bg-primary/10 rounded-xl text-primary">
+                         <Calendar className="w-6 h-6" />
+                       </div>
+                       <div>
+                         <h3 className="text-xl font-bold">Manage Visit Availability</h3>
+                         <p className="text-sm text-muted-foreground">Set your available days and time slots for property visits.</p>
+                  </div>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="gap-2" 
+                  onClick={() => saveAvailabilityMutation.mutate()}
+                  disabled={saveAvailabilityMutation.isPending}
+                >
+                  {saveAvailabilityMutation.isPending ? (
+                    <span className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  {saveAvailabilityMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                    <div className="w-1.5 h-6 bg-primary rounded-full" />
+                    Select Available Days
+                  </h4>
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                      <button
+                        key={day}
+                        onClick={() => toggleDay(day)}
+                        className={cn(
+                          "py-3 rounded-xl border text-xs font-bold transition-all",
+                          availableDays.includes(day)
+                            ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
+                            : "bg-background border-border hover:border-primary/50"
+                        )}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground italic">
+                    * Weekends are highly recommended for higher visit rates.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                    <div className="w-1.5 h-6 bg-primary rounded-full" />
+                    Set Time Slots
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    {timeSlots.map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => toggleSlot(item.id)}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
+                          item.active ? "bg-primary/5 border-primary/30" : "bg-background border-border"
+                        )}
+                      >
+                        <span className={cn("text-xs font-medium", item.active ? "text-primary" : "text-muted-foreground")}>
+                          {item.slot}
+                        </span>
+                        <div className={cn(
+                          "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                          item.active ? "border-primary bg-primary" : "border-muted-foreground/30"
+                        )}>
+                          {item.active && <CheckCircle2 className="w-3 h-3 text-white" />}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="ghost" size="sm" className="w-full border border-dashed border-border rounded-xl h-10 text-muted-foreground hover:text-primary">
+                    <Plus className="w-4 h-4 mr-2" /> Add custom slot
+                  </Button>
+                </div>
+              </div>
+
+                   <div className="mt-8 pt-6 border-t border-border/50 bg-secondary/10 -mx-6 -mb-6 px-6 pb-6 rounded-b-2xl">
+                     <div className="flex items-start gap-3">
+                       <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                       <div className="space-y-1">
+                         <p className="text-xs font-bold text-foreground uppercase tracking-wider">How it works</p>
+                         <p className="text-xs text-muted-foreground leading-relaxed">
+                           Once you set your availability, tenants can only book visits during these times. 
+                           Each booking requires a ₹99 refundable token. You will receive ₹49 if a tenant doesn't show up.
+                         </p>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </TabsContent>
+               <TabsContent value="verification" className="space-y-6">
+                <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-primary/10 rounded-xl text-primary">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold">Owner Verification (KYC)</h3>
+                      <p className="text-sm text-muted-foreground">Get verified to list properties and build trust with tenants.</p>
+                    </div>
+                  </div>
+
+                  {user.profile.kycStatus === 'verified' ? (
+                    <div className="bg-green-500/10 border border-green-200 rounded-xl p-6 text-center flex flex-col items-center">
+                      <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mb-4 text-white">
+                        <CheckCircle2 className="w-10 h-10" />
+                      </div>
+                      <h4 className="text-lg font-bold text-green-700 mb-2">You are a Verified Owner!</h4>
+                      <p className="text-green-600/80 max-w-md mx-auto mb-6">
+                        Your account has been successfully verified. You now have access to premium listing features and a verified badge.
+                      </p>
+                      <Button onClick={() => navigate('/post-property')} variant="default" className="bg-green-600 hover:bg-green-700">
+                        Post a Property
+                      </Button>
+                    </div>
+                  ) : user.profile.kycStatus === 'pending' ? (
+                    <div className="bg-yellow-500/10 border border-yellow-200 rounded-xl p-6 text-center flex flex-col items-center">
+                      <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center mb-4 text-white">
+                        <Clock className="w-10 h-10" />
+                      </div>
+                      <h4 className="text-lg font-bold text-yellow-700 mb-2">Verification in Progress</h4>
+                      <p className="text-yellow-600/80 max-w-md mx-auto">
+                        Our team is currently reviewing your documents. This usually takes 24-48 hours. We'll notify you once the process is complete.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {user.profile.kycStatus === 'rejected' && (
+                        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold text-destructive">Verification Rejected</p>
+                            <p className="text-sm text-destructive/80">{user.profile.kyc_rejection_reason || 'Please re-upload clear documents.'}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="fullName">Full Name (as per PAN)</Label>
+                            <Input 
+                              id="fullName" 
+                              value={kycForm.fullName} 
+                              onChange={(e) => setKycForm(prev => ({ ...prev, fullName: e.target.value }))}
+                              placeholder="JOHN DOE" 
+                              className="uppercase" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="pan">PAN Number</Label>
+                            <Input 
+                              id="pan" 
+                              value={kycForm.panNumber} 
+                              onChange={(e) => setKycForm(prev => ({ ...prev, panNumber: e.target.value }))}
+                              placeholder="ABCDE1234F" 
+                              className="uppercase" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="aadhaar">Aadhaar Number (Last 4 digits)</Label>
+                            <Input 
+                              id="aadhaar" 
+                              value={kycForm.aadhaarNumber} 
+                              onChange={(e) => setKycForm(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
+                              placeholder="1234" 
+                              maxLength={4} 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <p className="text-sm font-medium mb-2">Required Documents</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <input
+                              type="file"
+                              ref={selfieInputRef}
+                              className="hidden"
+                              accept="image/*"
+                              onChange={(e) => handleKycFileChange('selfie', e)}
+                            />
+                            <input
+                              type="file"
+                              ref={propertyDocInputRef}
+                              className="hidden"
+                              accept="image/*,application/pdf"
+                              onChange={(e) => handleKycFileChange('propertyDoc', e)}
+                            />
+                            <input
+                              type="file"
+                              ref={electricityBillInputRef}
+                              className="hidden"
+                              accept="image/*,application/pdf"
+                              onChange={(e) => handleKycFileChange('electricityBill', e)}
+                            />
+                            {[
+                              { label: 'Selfie', icon: Camera, type: 'selfie', key: 'selfie', ref: selfieInputRef },
+                              { label: 'Property Doc', icon: Building2, type: 'property_doc', key: 'propertyDoc', ref: propertyDocInputRef },
+                              { label: 'Elec. Bill', icon: Zap, type: 'electricity_bill', key: 'electricityBill', ref: electricityBillInputRef },
+                            ].map((doc) => (
+                              <button
+                                key={doc.type}
+                                onClick={() => doc.ref.current?.click()}
+                                className={cn(
+                                  "flex flex-col items-center justify-center p-4 border border-dashed rounded-xl transition-colors group relative",
+                                  kycFiles[doc.key as keyof typeof kycFiles] ? "bg-primary/5 border-primary" : "border-border hover:bg-secondary/50"
+                                )}
+                              >
+                                {kycFiles[doc.key as keyof typeof kycFiles] ? (
+                                  <CheckCircle2 className="w-6 h-6 text-primary mb-2" />
+                                ) : (
+                                  <doc.icon className="w-6 h-6 text-muted-foreground group-hover:text-primary mb-2" />
+                                )}
+                                <span className="text-xs font-medium">{doc.label}</span>
+                                {kycFiles[doc.key as keyof typeof kycFiles] && (
+                                  <Badge className="absolute -top-2 -right-2 px-1 h-5 min-w-5">1</Badge>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-border">
+                        <Button 
+                          className="w-full h-12 rounded-xl font-bold gap-2" 
+                          onClick={() => submitKycMutation.mutate()}
+                          disabled={submitKycMutation.isPending || !kycForm.panNumber || !kycForm.aadhaarNumber}
+                        >
+                          {submitKycMutation.isPending ? (
+                            <span className="w-5 h-5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-5 h-5" />
+                          )}
+                          {submitKycMutation.isPending ? 'Submitting...' : 'Submit for Verification'}
+                        </Button>
+                        <p className="text-[11px] text-muted-foreground text-center mt-3">
+                          By submitting, you agree to our terms for owner verification and data privacy.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
             </Tabs>
           </div>
           </div>
         </div>
       </main>
       <Footer />
+      {selectedBookingForOTP && (
+        <BookingOTPDialog
+          booking={selectedBookingForOTP}
+          open={isOTPOpen}
+          onOpenChange={setIsOTPOpen}
+          onComplete={() => {
+            // In real app, refresh bookings
+            toast.success('Visit status updated');
+          }}
+        />
+      )}
     </div>
   );
 }

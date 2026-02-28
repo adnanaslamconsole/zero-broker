@@ -1,0 +1,13 @@
+ZeroBroker Verification Code
+
+Use the code below to complete your login to ZeroBroker.
+
+Verification Code: {{ .Token }}
+
+This code will expire in 15 minutes.
+
+Security Warning: For your protection, never share this code with anyone. ZeroBroker staff will never ask for your code.
+
+If you didn't request this code, you can safely ignore this email.
+
+© 2026 ZeroBroker. All rights reserved.
