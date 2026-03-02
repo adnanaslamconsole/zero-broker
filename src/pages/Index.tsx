@@ -38,7 +38,6 @@ const Index = () => {
         <div className="container flex items-center justify-center gap-3 text-primary font-bold text-xs sm:text-sm tracking-tight">
           <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
           <span className="uppercase tracking-widest">Only Serious Visits Allowed. ₹99 Refundable Visit Token.</span>
-          <Sparkles className="w-4 h-4 text-warning" />
         </div>
       </div>
 

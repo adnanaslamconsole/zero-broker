@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { Loader2, Building2, Search } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 const societySchema = z.object({
   name: z.string().min(3, 'Society name is required'),
@@ -78,8 +79,8 @@ export function EnrollSociety({ onSuccess }: { onSuccess: () => void }) {
       onSuccess();
     } catch (error) {
       console.error('Enrollment error:', error);
-      const err = error as Error;
-      toast.error(err.message || 'Failed to enroll society');
+      logError(error, { action: 'society.enroll' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'society.enroll' }) || 'Failed to enroll society');
     } finally {
       setIsCreating(false);
     }
@@ -213,8 +214,8 @@ export function JoinSociety({ onSuccess }: { onSuccess: () => void }) {
       toast.success('Request sent! Waiting for admin approval.');
       onSuccess();
     } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || 'Failed to join society');
+      logError(error, { action: 'society.join' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'society.join' }) || 'Failed to join society');
     } finally {
       setIsJoining(false);
     }

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Shield, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { assertEmailNotDisposable } from '@/lib/disposableEmailGuard';
 
 export const RegistrationForm = () => {
   const { signUp } = useAuth();
@@ -26,10 +27,11 @@ export const RegistrationForm = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
+      await assertEmailNotDisposable(email);
       await signUp(email, password, name);
       toast.success('Registration successful! Please check your email.');
     } catch (error) {
-      console.error('Registration error:', error);
+      toast.error((error as Error).message || 'Registration failed');
     } finally {
       setIsLoading(false);
     }

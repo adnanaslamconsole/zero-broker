@@ -385,7 +385,7 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
           <div className="grid grid-cols-4 gap-2 mt-5">
             <Button 
               variant="default" 
-              className="col-span-3 h-10 sm:h-11 rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-primary/20 gap-2"
+              className="col-span-3 h-10 sm:h-11 rounded-xl text-[10px] xs:text-xs sm:text-sm font-bold shadow-lg shadow-primary/20 gap-1.5 xs:gap-2 px-2"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -393,7 +393,7 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
               }}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              Book Verified Visit
+              <span className="truncate">Book Verified Visit</span>
             </Button>
             <Button variant="secondary" size="icon" className="h-10 sm:h-11 w-full rounded-xl">
               <MessageCircle className="w-4 h-4" />

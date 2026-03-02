@@ -9,6 +9,7 @@ import { ListingModeration } from '@/components/admin/ListingModeration';
 import { RevenueAnalytics } from '@/components/admin/RevenueAnalytics';
 import { KycVerification } from '@/components/admin/KycVerification';
 import { BlogManager } from '@/components/admin/BlogManager';
+import { EmailTestPanel } from '@/components/admin/EmailTestPanel';
 import { useAuth } from '@/context/AuthContext';
 import { ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,7 @@ export default function AdminDashboard() {
               <TabsTrigger value="listings">Listing Moderation</TabsTrigger>
               <TabsTrigger value="revenue">Revenue & Analytics</TabsTrigger>
               <TabsTrigger value="blog">Blog & Content</TabsTrigger>
+              <TabsTrigger value="email">Email</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -95,6 +97,10 @@ export default function AdminDashboard() {
 
             <TabsContent value="blog" className="space-y-4">
               <BlogManager />
+            </TabsContent>
+
+            <TabsContent value="email" className="space-y-4">
+              <EmailTestPanel />
             </TabsContent>
           </Tabs>
         </div>

@@ -15,6 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Check, X, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export function ListingModeration() {
   const [statusFilter, setStatusFilter] = useState('pending');
@@ -55,7 +56,8 @@ export function ListingModeration() {
       toast.success('Listing status updated');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update listing');
+      logError(error, { action: 'admin.moderateListing' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'admin.moderateListing' }) || 'Failed to update listing');
     },
   });
 

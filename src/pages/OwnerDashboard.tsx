@@ -122,7 +122,7 @@ export default function OwnerDashboard() {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       toast.success('Property status updated');
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error('Failed to update property: ' + error.message);
     }
   });

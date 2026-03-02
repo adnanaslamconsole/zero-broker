@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 interface KycRequest {
   id: string;
@@ -55,7 +56,7 @@ export const KycVerification: React.FC = () => {
       
       if (docError) throw docError;
 
-      return profiles.map((p: any) => ({
+      return profiles.map((p) => ({
         id: p.id,
         name: p.name,
         email: p.email,
@@ -101,7 +102,8 @@ export const KycVerification: React.FC = () => {
       setRejectionReason('');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update KYC status');
+      logError(error, { action: 'admin.updateKycStatus' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'admin.updateKycStatus' }) || 'Failed to update KYC status');
     }
   });
 

@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { MapPin, Search, Loader2, X, Navigation } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { appFetch } from '@/lib/requestAbort';
 
 interface LocationResult {
   place_id: number;
@@ -44,6 +45,7 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
   }, [value]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchSuggestions = async () => {
       if (!debouncedValue || debouncedValue.length < 3) {
         setSuggestions([]);
@@ -52,22 +54,27 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
 
       setIsLoading(true);
       try {
-        const res = await fetch(
+        const res = await appFetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
             debouncedValue
           )}&limit=8&addressdetails=1&countrycodes=in`
+          ,
+          { signal: controller.signal }
         );
         const data = await res.json();
         setSuggestions(data);
         setIsOpen(true);
       } catch (error) {
-        console.error('Failed to fetch locations', error);
+        if ((error as Error)?.name !== 'AbortError') {
+          console.error('Failed to fetch locations', error);
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchSuggestions();
+    return () => controller.abort();
   }, [debouncedValue]);
 
   // Close dropdown when clicking outside

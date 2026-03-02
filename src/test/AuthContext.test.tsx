@@ -73,8 +73,12 @@ describe('AuthContext', () => {
   });
 
   it('should reset isLoading after successful logout', async () => {
-    let authCallback: any;
-    (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
+    let authCallback: ((event: string, session: unknown) => void) | undefined;
+    (
+      supabase.auth.onAuthStateChange as unknown as {
+        mockImplementation: (fn: (cb: (event: string, session: unknown) => void) => unknown) => void;
+      }
+    ).mockImplementation((cb) => {
       authCallback = cb;
       return { data: { subscription: { unsubscribe: vi.fn() } } };
     });
@@ -97,7 +101,9 @@ describe('AuthContext', () => {
   });
 
   it('should reset isLoading after failed logout', async () => {
-    (supabase.auth.signOut as any).mockReturnValueOnce(Promise.resolve({ error: new Error('Logout failed') }));
+    (
+      supabase.auth.signOut as unknown as { mockReturnValueOnce: (value: unknown) => unknown }
+    ).mockReturnValueOnce(Promise.resolve({ error: new Error('Logout failed') }));
 
     render(
       <AuthProvider>
@@ -116,8 +122,12 @@ describe('AuthContext', () => {
   });
 
   it('should reset isLoading when SIGNED_OUT event is received', async () => {
-    let authCallback: any;
-    (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
+    let authCallback: ((event: string, session: unknown) => void) | undefined;
+    (
+      supabase.auth.onAuthStateChange as unknown as {
+        mockImplementation: (fn: (cb: (event: string, session: unknown) => void) => unknown) => void;
+      }
+    ).mockImplementation((cb) => {
       authCallback = cb;
       return { data: { subscription: { unsubscribe: vi.fn() } } };
     });
@@ -130,7 +140,7 @@ describe('AuthContext', () => {
 
     // Simulate SIGNED_OUT event
     await act(async () => {
-      authCallback('SIGNED_OUT', null);
+      authCallback?.('SIGNED_OUT', null);
     });
 
     expect(screen.getByTestId('loading').textContent).toBe('idle');
@@ -138,8 +148,12 @@ describe('AuthContext', () => {
   });
 
   it('should reset isLoading for unhandled auth events', async () => {
-    let authCallback: any;
-    (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
+    let authCallback: ((event: string, session: unknown) => void) | undefined;
+    (
+      supabase.auth.onAuthStateChange as unknown as {
+        mockImplementation: (fn: (cb: (event: string, session: unknown) => void) => unknown) => void;
+      }
+    ).mockImplementation((cb) => {
       authCallback = cb;
       return { data: { subscription: { unsubscribe: vi.fn() } } };
     });
@@ -152,7 +166,7 @@ describe('AuthContext', () => {
 
     // Simulate an unhandled event like INITIAL_SESSION
     await act(async () => {
-      authCallback('INITIAL_SESSION', null);
+      authCallback?.('INITIAL_SESSION', null);
     });
 
     expect(screen.getByTestId('loading').textContent).toBe('idle');

@@ -3,16 +3,23 @@ import { supabase } from '@/lib/supabase';
 import type { UserAccountSnapshot, UserProfile } from '@/types/user';
 import { toast } from 'sonner';
 import { offlineStorage } from '@/lib/offlineStorage';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
+import { assertEmailNotDisposable, isValidEmail } from '@/lib/disposableEmailGuard';
+import { abortAllRequests } from '@/lib/requestAbort';
+import { queryClient } from '@/lib/queryClient';
 
 interface AuthContextValue {
   user: UserAccountSnapshot | null;
   isLoading: boolean;
+  isLoggingOut: boolean;
   loginWithOtp: (identifier: string, type: 'email' | 'phone', name?: string, role?: string) => Promise<void>;
   verifyOtp: (identifier: string, token: string, type: 'email' | 'phone') => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithOAuth: (provider: 'google' | 'github') => Promise<void>;
   signUp: (email: string, password: string, name: string, role?: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
+  updateProfile: (payload: { name: string; mobile?: string | null }) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<string>;
   logout: () => Promise<void>;
   // MFA methods
   enrollMfa: () => Promise<{ qrCode: string; secret: string }>;
@@ -25,7 +32,31 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserAccountSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const fetchIdRef = useRef<string | null>(null);
+
+  const patchLocalProfile = (patch: Partial<UserProfile>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const nextProfile: UserProfile = {
+        ...prev.profile,
+        ...patch,
+        updatedAt: new Date().toISOString(),
+      };
+      if (prev.profile.isDemo) {
+        localStorage.setItem('zerobroker-demo-session', JSON.stringify(nextProfile));
+      }
+      return { ...prev, profile: nextProfile };
+    });
+  };
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
 
   useEffect(() => {
     let mounted = true;
@@ -104,6 +135,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       if (profile && fetchIdRef.current === fetchId) {
+        if (profile.is_blocked) {
+          toast.error('Your account is blocked. Please contact support.');
+          await supabase.auth.signOut();
+          return;
+        }
         // Transform DB profile to UserProfile type
         const userProfile: UserProfile = {
           id: profile.id,
@@ -151,7 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const isDemoUser = 
         identifier === 'dummy@zerobroker.in' || 
         identifier === '9999999999' || 
-        identifier === 'paid-owner@demo.com';
+        identifier === 'paid-owner@demo.com' ||
+        identifier === 'admin@demo.com';
 
       if (isDemoUser) {
         // Store meta for demo verification step
@@ -172,6 +209,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cleanIdentifier = identifier.trim().toLowerCase();
 
       if (type === 'email') {
+        if (isValidEmail(cleanIdentifier)) {
+          await assertEmailNotDisposable(cleanIdentifier);
+        }
         const { error: err } = await supabase.auth.signInWithOtp({
           email: cleanIdentifier,
           options: {
@@ -201,8 +241,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.success(`OTP sent to your ${type === 'email' ? 'email' : 'phone'}!`);
     } catch (error) {
       console.error('Login error:', error);
-      const err = error as Error;
-      toast.error(err.message || 'Failed to send OTP');
+      logError(error, { action: 'auth.loginWithOtp' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.loginWithOtp' }) || 'Failed to send OTP');
     } finally {
       setIsLoading(false);
     }
@@ -223,7 +263,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await logSecurityEvent('login-failed', { email, reason: 'Invalid credentials' });
           toast.error('Invalid email or password.');
         } else {
-          toast.error(error.message);
+          logError(error, { action: 'auth.signIn' });
+          toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.signIn' }));
         }
         throw error;
       }
@@ -252,7 +293,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await logSecurityEvent('oauth-login-initiated', { provider });
     } catch (error) {
       console.error('OAuth error:', error);
-      toast.error((error as Error).message);
+      logError(error, { action: 'auth.signInWithOAuth' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.signInWithOAuth' }));
     } finally {
       setIsLoading(false);
     }
@@ -286,7 +328,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('SignUp error:', error);
-      toast.error((error as Error).message);
+      logError(error, { action: 'auth.signUp' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.signUp' }));
       throw error;
     } finally {
       setIsLoading(false);
@@ -306,14 +349,93 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.success('Password updated successfully!');
     } catch (error) {
       console.error('Update password error:', error);
-      toast.error((error as Error).message);
+      logError(error, { action: 'auth.updatePassword' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.updatePassword' }));
       throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logSecurityEvent = async (type: string, metadata: any) => {
+  const updateProfile = async (payload: { name: string; mobile?: string | null }) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const name = payload.name.trim();
+    const rawMobile = payload.mobile?.trim() ?? '';
+    const mobile = rawMobile.length > 0 ? rawMobile : null;
+
+    if (name.length < 2) {
+      throw new Error('Name must be at least 2 characters long');
+    }
+
+    if (mobile && !/^\+?\d{10,15}$/.test(mobile)) {
+      throw new Error('Please enter a valid mobile number');
+    }
+
+    if (user.profile.isDemo) {
+      patchLocalProfile({ name, mobile: mobile ?? undefined });
+      return;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) throw new Error('Not authenticated');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name, mobile })
+      .eq('id', user.profile.id);
+
+    if (error) throw error;
+
+    patchLocalProfile({ name, mobile: mobile ?? undefined });
+  };
+
+  const uploadAvatar = async (file: File) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const maxBytes = 5 * 1024 * 1024;
+
+    if (!allowedTypes.has(file.type)) {
+      throw new Error('Please upload a JPG, PNG, or WEBP image');
+    }
+    if (file.size > maxBytes) {
+      throw new Error('Image size must be 5MB or less');
+    }
+
+    if (user.profile.isDemo) {
+      const dataUrl = await readFileAsDataUrl(file);
+      patchLocalProfile({ avatarUrl: dataUrl });
+      return dataUrl;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) throw new Error('Not authenticated');
+
+    const ext = file.name.split('.').pop() || 'png';
+    const fileName = `${crypto.randomUUID()}.${ext}`;
+    const filePath = `${user.profile.id}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file);
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    const publicUrl = data.publicUrl;
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', user.profile.id);
+
+    if (updateError) throw updateError;
+
+    patchLocalProfile({ avatarUrl: publicUrl });
+    return publicUrl;
+  };
+
+  const logSecurityEvent = async (type: string, metadata: Record<string, unknown> & { email?: string; userId?: string }) => {
     if (!user && !metadata.email) return;
     
     try {
@@ -374,25 +496,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const isDemoUser = 
         identifier === 'dummy@zerobroker.in' || 
         identifier === '9999999999' || 
-        identifier === 'paid-owner@demo.com';
+        identifier === 'paid-owner@demo.com' ||
+        identifier === 'admin@demo.com';
 
       if (isDemoUser && token === '12345678') {
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Use different ID for paid demo owner to avoid seeing seeded public properties as their own
-        const demoUserId = identifier === 'paid-owner@demo.com' 
-          ? 'd0000000-0000-0000-0000-000000000001' 
-          : '00000000-0000-0000-0000-000000000000';
+        const demoUserId =
+          identifier === 'paid-owner@demo.com'
+            ? 'd0000000-0000-0000-0000-000000000001'
+            : identifier === 'admin@demo.com'
+              ? 'a0000000-0000-0000-0000-000000000001'
+              : '00000000-0000-0000-0000-000000000000';
 
         // Mock profile data directly to avoid RLS issues without session
         const mockProfile: UserProfile = {
           id: demoUserId,
-          name: identifier === 'paid-owner@demo.com' ? 'Paid Demo Owner' : 'ZeroBroker Partner',
+          name:
+            identifier === 'paid-owner@demo.com'
+              ? 'Paid Demo Owner'
+              : identifier === 'admin@demo.com'
+                ? 'Demo Admin'
+                : 'ZeroBroker Partner',
           email: type === 'email' ? identifier : undefined,
           mobile: type === 'phone' ? identifier : undefined,
           avatarUrl: null,
-          roles: identifier === 'paid-owner@demo.com' ? ['owner'] : ['owner'],
-          primaryRole: 'owner',
+          roles: identifier === 'admin@demo.com' ? ['platform-admin'] : ['owner'],
+          primaryRole: identifier === 'admin@demo.com' ? 'platform-admin' : 'owner',
           kycStatus: 'verified',
           kycDocuments: [],
           trustScore: 100,
@@ -436,7 +567,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (type === 'email') {
         // Try magiclink first (standard for signInWithOtp)
-        let { error: err } = await supabase.auth.verifyOtp({
+        const { error: err } = await supabase.auth.verifyOtp({
           email: cleanIdentifier,
           token,
           type: 'magiclink',
@@ -483,8 +614,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.success('Logged in successfully!');
     } catch (error) {
       console.error('Verify error:', error);
-      const err = error as Error;
-      toast.error(err.message || 'Invalid OTP');
+      logError(error, { action: 'auth.verifyOtp' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.verifyOtp' }) || 'Invalid OTP');
       throw error;
     } finally {
       setIsLoading(false);
@@ -492,39 +623,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    setIsLoading(true);
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
     try {
-      // Clear demo session first
+      setIsLoading(true);
+      abortAllRequests();
+      await queryClient.cancelQueries();
+
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      try {
+        offlineStorage.clearDraft();
+      } catch {
+        // ignore
+      }
+
+      try {
+        sessionStorage.clear();
+      } catch {
+        // ignore
+      }
+
       try {
         localStorage.removeItem('zerobroker-demo-session');
         localStorage.removeItem('demo_user_meta');
-        // Clear any other potentially stuck session data
-        const keysToRemove = [];
+        localStorage.removeItem('zerobroker-auth-session');
+        const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.includes('supabase.auth.token') || key.includes('sb-') || key.includes('zerobroker'))) {
+          if (!key) continue;
+          if (key.includes('supabase.auth.token') || key.startsWith('sb-') || key.includes('zerobroker')) {
             keysToRemove.push(key);
           }
         }
-        keysToRemove.forEach(key => localStorage.removeItem(key));
-      } catch (e) {
-        console.error('Error clearing localStorage during logout:', e);
+        keysToRemove.forEach((key) => localStorage.removeItem(key));
+      } catch {
+        // ignore
       }
-      
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
+
+      queryClient.clear();
       setUser(null);
       toast.success('Logged out successfully');
+
+      try {
+        if (import.meta.env.MODE !== 'test') {
+          window.location.assign('/login');
+        }
+      } catch {
+        // ignore
+      }
     } catch (error) {
       console.error('Logout error:', error);
-      const err = error as Error;
-      toast.error(err.message || 'Failed to logout');
-      // Even if signOut fails, we should still clear local state
-      setUser(null);
+      logError(error, { action: 'auth.logout' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.logout' }) || 'Failed to logout');
     } finally {
       // Ensure loading is cleared regardless of outcome
       setIsLoading(false);
+      setIsLoggingOut(false);
     }
   };
 
@@ -533,12 +689,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isLoading,
+        isLoggingOut,
         loginWithOtp,
         verifyOtp,
          signIn,
          signInWithOAuth,
          signUp,
          updatePassword,
+        updateProfile,
+        uploadAvatar,
         logout,
         enrollMfa,
         verifyAndEnableMfa,
@@ -557,4 +716,3 @@ export function useAuth() {
   }
   return ctx;
 }
-

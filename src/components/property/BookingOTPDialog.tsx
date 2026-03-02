@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useMutation } from '@tanstack/react-query';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 interface BookingOTPDialogProps {
   booking: {
@@ -65,7 +66,8 @@ export const BookingOTPDialog: React.FC<BookingOTPDialogProps> = ({ booking, ope
       if (onComplete) onComplete();
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Verification failed');
+      logError(error, { action: 'booking.verifyOtp' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'booking.verifyOtp' }) || 'Verification failed');
     }
   });
 

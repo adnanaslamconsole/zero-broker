@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 interface PricingPlan {
   id: string;
@@ -92,8 +93,8 @@ export default function Plans() {
       toast.success('Your plan has been updated');
     },
     onError: (error) => {
-      const err = error as Error;
-      toast.error(err.message || 'Failed to update plan');
+      logError(error, { action: 'plan.subscribe' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'plan.subscribe' }) || 'Failed to update plan');
     },
   });
 

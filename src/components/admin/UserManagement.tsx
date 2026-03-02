@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Search, Loader2, Ban, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export function UserManagement() {
   const [search, setSearch] = useState('');
@@ -50,7 +51,8 @@ export function UserManagement() {
       toast.success('User status updated');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update user status');
+      logError(error, { action: 'admin.toggleBlockUser' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'admin.toggleBlockUser' }) || 'Failed to update user status');
     },
   });
 

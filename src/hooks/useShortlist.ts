@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export function useShortlist() {
   const { user } = useAuth();
@@ -92,8 +93,9 @@ export function useShortlist() {
           : 'Property removed from shortlist'
       );
     },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to update shortlist');
+    onError: (error: Error) => {
+      logError(error, { action: 'shortlist.toggle' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'shortlist.toggle' }) || 'Failed to update shortlist');
     },
   });
 

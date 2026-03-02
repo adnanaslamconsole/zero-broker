@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Properties from "./pages/Properties";
@@ -32,8 +32,8 @@ import Press from "./pages/Press";
 import { MobileNav } from "./components/layout/MobileNav";
 import { ScrollToTop } from "./components/layout/ScrollToTop";
 import { ScrollToTopOnNavigate } from "./components/layout/ScrollToTopOnNavigate";
-
-const queryClient = new QueryClient();
+import { queryClient } from "@/lib/queryClient";
+import { AuthLoadingOverlay } from "@/components/auth/AuthLoadingOverlay";
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -44,6 +44,7 @@ const App = () => (
         <BrowserRouter>
           <ScrollToTopOnNavigate />
           <div className="flex flex-col min-h-screen pb-16 lg:pb-0">
+            <AuthLoadingOverlay />
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/properties" element={<Properties />} />

@@ -185,6 +185,17 @@ export function Header() {
             
             <div className="h-8 w-px bg-border/60 mx-1" />
 
+            {isAdmin ? (
+              <Button
+                variant="outline"
+                className="gap-2 h-11 px-5 rounded-xl border-primary/20 hover:border-primary/50 hover:bg-primary/5 font-bold transition-all duration-300"
+                onClick={() => navigate('/admin')}
+              >
+                <ShieldCheck className="w-4.5 h-4.5 text-primary" />
+                Admin
+              </Button>
+            ) : null}
+
             <Button 
               variant="outline" 
               className="gap-2 h-11 px-5 rounded-xl border-primary/20 hover:border-primary/50 hover:bg-primary/5 font-bold transition-all duration-300"
@@ -207,6 +218,17 @@ export function Header() {
 
           {/* Mobile Actions (Visible on small screens) */}
           <div className="flex lg:hidden items-center gap-1 sm:gap-2 ml-auto">
+            {isAdmin ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="relative touch-friendly shrink-0 h-9 w-9"
+                onClick={() => navigate('/admin')}
+                aria-label="Admin dashboard"
+              >
+                <ShieldCheck className="w-5 h-5" />
+              </Button>
+            ) : null}
             {user ? (
               <Button
                 variant="default"

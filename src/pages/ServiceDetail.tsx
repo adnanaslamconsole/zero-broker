@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { Loader2, CheckCircle2, Calendar, MapPin, Clock } from 'lucide-react';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export default function ServiceDetail() {
   const { id } = useParams();
@@ -26,18 +27,21 @@ export default function ServiceDetail() {
     queryKey: ['service', id],
     queryFn: async () => {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
-      const query = supabase.from('services').select('*');
+      
+      let query = supabase.from('services').select('*');
       
       if (isUuid) {
-        query.eq('id', id);
+        query = query.eq('id', id);
       } else {
-        query.eq('slug', id);
+        query = query.eq('slug', id);
       }
 
-      const { data, error } = await query.single();
+      const { data, error } = await query.maybeSingle();
       if (error) throw error;
       return data;
     },
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
     enabled: Boolean(id),
   });
 
@@ -66,8 +70,9 @@ export default function ServiceDetail() {
       setTimeout(() => navigate('/services'), 2000);
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to book service');
-      if (error.message.includes('login')) {
+      logError(error, { action: 'serviceBooking.create' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'serviceBooking.create' }) || 'Failed to book service');
+      if (getUserFriendlyErrorMessage(error, { action: 'serviceBooking.create' }).toLowerCase().includes('log in')) {
         navigate('/login');
       }
     },
@@ -136,7 +141,7 @@ export default function ServiceDetail() {
               <div className="flex items-baseline gap-2 mb-8">
                 <span className="text-sm text-muted-foreground">Starting from</span>
                 <span className="text-3xl font-bold text-primary">₹{service.base_price}</span>
-                <span className="text-sm text-muted-foreground">/{service.price_unit}</span>
+                <span className="text-sm text-muted-foreground">/{service.pricing_model || service.price_unit || 'unit'}</span>
               </div>
             </div>
 
@@ -241,4 +246,3 @@ export default function ServiceDetail() {
     </div>
   );
 }
-

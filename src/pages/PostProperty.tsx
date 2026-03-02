@@ -45,6 +45,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { LocationSearch } from '@/components/property/LocationSearch';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 import { offlineStorage } from '@/lib/offlineStorage';
 
@@ -115,10 +116,12 @@ export default function PostProperty() {
   useEffect(() => {
     const draft = offlineStorage.getDraft();
     if (draft && draft.data) {
+      const draftData = draft.data as Record<string, unknown>;
       // If a draft exists, check if user wants to restore it
       const restoreDraft = () => {
-        form.reset(draft.data);
-        if (draft.data.step) setCurrentStep(draft.data.step);
+        form.reset(draftData as never);
+        const step = draftData.step;
+        if (typeof step === 'number') setCurrentStep(step);
         toast.success('Draft restored', {
           description: 'We found an unsaved property listing and restored it for you.'
         });
@@ -327,8 +330,8 @@ export default function PostProperty() {
       });
 
       if (error) {
-        console.error('Supabase insert error:', error);
-        throw new Error(`Failed to post property: ${error.message} (Code: ${error.code})`);
+        logError(error, { action: 'property.create' });
+        throw new Error(getUserFriendlyErrorMessage(error, { action: 'property.create' }) || 'Failed to post property');
       }
 
       toast.success('Property posted successfully!');
@@ -341,8 +344,8 @@ export default function PostProperty() {
       offlineStorage.clearDraft(); // Clear draft after successful post
       navigate('/properties');
     } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || 'Failed to post property');
+      logError(error, { action: 'property.create' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'property.create' }) || 'Failed to post property');
     } finally {
       setIsSubmitting(false);
     }

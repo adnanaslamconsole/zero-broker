@@ -2,7 +2,7 @@ import { toast } from 'sonner';
 
 export interface PropertyDraft {
   id: string;
-  data: any;
+  data: unknown;
   lastUpdated: string;
   userId?: string; // Optional: can be tied to a specific user after login
 }
@@ -10,7 +10,7 @@ export interface PropertyDraft {
 const STORAGE_KEY = 'zero_broker_property_draft';
 
 export const offlineStorage = {
-  saveDraft: (data: any, userId?: string) => {
+  saveDraft: (data: unknown, userId?: string) => {
     try {
       const draft: PropertyDraft = {
         id: crypto.randomUUID(),

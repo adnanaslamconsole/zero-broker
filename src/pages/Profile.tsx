@@ -9,6 +9,7 @@ import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Phone, Mail, Trash2, Ch
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 import { BookingOTPDialog } from '@/components/property/BookingOTPDialog';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -18,14 +19,25 @@ import { Progress } from '@/components/ui/progress';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+type BookingForOTP = {
+  id: string;
+  propertyTitle: string;
+  date: string;
+  time: string;
+  address: string;
+  tenant_id: string;
+  owner_id: string;
+};
+
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile, uploadAvatar } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const defaultTab = searchParams.get('tab') || 'activity';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [demoAvatarUrl, setDemoAvatarUrl] = useState<string | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const avatarPreviewUrlRef = useRef<string | null>(null);
 
   const handleTabChange = (value: string) => {
     setSearchParams({ tab: value });
@@ -33,14 +45,15 @@ export default function Profile() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/');
+    navigate('/login');
   };
 
   const [isEditing, setIsEditing] = useState(false);
-  const [selectedBookingForOTP, setSelectedBookingForOTP] = useState<any>(null);
+  const [selectedBookingForOTP, setSelectedBookingForOTP] = useState<BookingForOTP | null>(null);
   const [isOTPOpen, setIsOTPOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editMobile, setEditMobile] = useState('');
+  const [editAttempted, setEditAttempted] = useState(false);
 
   // Initialize edit state when user loads
   useEffect(() => {
@@ -53,39 +66,31 @@ export default function Profile() {
   const updateProfileMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Not authenticated');
-      
-      // Handle demo user
-      if (user.profile.isDemo) {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        return;
-      }
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({ name: editName, mobile: editMobile })
-        .eq('id', user.profile.id);
-
-      if (error) throw error;
+      await updateProfile({ name: editName, mobile: editMobile });
     },
     onSuccess: () => {
       toast.success('Profile updated successfully');
       setIsEditing(false);
-      
-      // Update local demo name/mobile if it's a demo user
-      if (user?.profile.isDemo) {
-        // No reload for demo users
-        return;
-      }
-      
-      // For real users, we avoid full reload which can reset session state
-      // window.location.reload(); 
+      setEditAttempted(false);
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update profile');
+      logError(error, { action: 'profile.update' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'profile.update' }) || 'Failed to update profile');
     }
   });
 
   const handleUpdateProfile = () => {
+    setEditAttempted(true);
+    const name = editName.trim();
+    const mobile = editMobile.trim();
+    if (name.length < 2) {
+      toast.error('Name must be at least 2 characters long');
+      return;
+    }
+    if (mobile.length > 0 && !/^\+?\d{10,15}$/.test(mobile)) {
+      toast.error('Please enter a valid mobile number');
+      return;
+    }
     updateProfileMutation.mutate();
   };
 
@@ -244,72 +249,53 @@ export default function Profile() {
 
   const uploadAvatarMutation = useMutation({
     mutationFn: async (file: File) => {
-      if (!user) throw new Error('Not authenticated');
-      
-      // Handle demo user
-      if (user.profile.isDemo) {
-        // Mock upload delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Create a local object URL for the demo user to see their "uploaded" photo
-        const localUrl = URL.createObjectURL(file);
-        
-        // We can't easily update the global user state from here without a complex flow,
-        // so we'll just show a success message for the demo experience.
-        return localUrl;
-      }
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.profile.id}-${Math.random()}.${fileExt}`;
-      const filePath = `${user.profile.id}/${fileName}`;
-
-      // Upload image
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      // Update profile
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', user.profile.id);
-
-      if (updateError) throw updateError;
-      
-      // For real users, the next profile fetch or page visit will show the change.
-      
-      return publicUrl;
+      return uploadAvatar(file);
     },
-    onSuccess: (url) => {
+    onSuccess: () => {
       toast.success('Profile photo updated');
-      
-      // For demo users, we update the local demoAvatarUrl state
-      if (user?.profile.isDemo) {
-        setDemoAvatarUrl(url);
-        toast.info('Demo Mode: Photo update is temporary');
-        return;
+      if (avatarPreviewUrlRef.current) {
+        URL.revokeObjectURL(avatarPreviewUrlRef.current);
+        avatarPreviewUrlRef.current = null;
       }
-      
-      // For real users, we avoid window.location.reload() which can cause logout if session is flaky
-      // Instead, we'll just update the local UI or trust the next navigation
-      // toast.info('Refresh to see changes across all pages');
+      setAvatarPreviewUrl(null);
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to upload photo');
+      logError(error, { action: 'profile.uploadAvatar' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'profile.uploadAvatar' }) || 'Failed to upload photo');
+      if (avatarPreviewUrlRef.current) {
+        URL.revokeObjectURL(avatarPreviewUrlRef.current);
+        avatarPreviewUrlRef.current = null;
+      }
+      setAvatarPreviewUrl(null);
     }
   });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
+    e.target.value = '';
+
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const maxBytes = 5 * 1024 * 1024;
+    if (!allowedTypes.has(file.type)) {
+      toast.error('Please upload a JPG, PNG, or WEBP image');
+      return;
+    }
+    if (file.size > maxBytes) {
+      toast.error('Image size must be 5MB or less');
+      return;
+    }
+
+    if (avatarPreviewUrlRef.current) {
+      URL.revokeObjectURL(avatarPreviewUrlRef.current);
+      avatarPreviewUrlRef.current = null;
+    }
+
+    const nextPreview = URL.createObjectURL(file);
+    avatarPreviewUrlRef.current = nextPreview;
+    setAvatarPreviewUrl(nextPreview);
+
     setIsUploading(true);
     try {
       await uploadAvatarMutation.mutateAsync(file);
@@ -317,6 +303,15 @@ export default function Profile() {
       setIsUploading(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrlRef.current) {
+        URL.revokeObjectURL(avatarPreviewUrlRef.current);
+        avatarPreviewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const getTrustScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
@@ -471,53 +466,75 @@ export default function Profile() {
     queryKey: ['rent-schedule', user?.profile?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
-        .from('rent_schedules')
-        .select('*, properties(title, address)')
-        .eq('tenant_id', user.profile.id);
-      
-      if (error) {
+      try {
+        const { data, error } = await supabase
+          .from('rent_schedules')
+          .select('*, properties(title, address)')
+          .eq('tenant_id', user.profile.id);
+        
+        if (error) throw error;
+        return data || [];
+      } catch (error) {
         console.error('Error fetching rent schedule:', error);
+        // Handle specific PostgREST errors (like missing table 404/PGRST205)
+        if (error.code === 'PGRST205' || error.message?.includes('not found')) {
+          console.warn('rent_schedules table not found in schema cache. Returning mock data.');
+        }
         return [
-          { id: '1', dueDate: '2024-04-05', amount: 25000, status: 'upcoming', properties: { title: 'Modern Apartment' } },
-          { id: '2', dueDate: '2024-03-05', amount: 25000, status: 'paid', properties: { title: 'Modern Apartment' } }
+          { id: '1', due_date: '2024-04-05', amount: 25000, status: 'upcoming', properties: { title: 'Modern Apartment', address: '123 Main St' } },
+          { id: '2', due_date: '2024-03-05', amount: 25000, status: 'paid', properties: { title: 'Modern Apartment', address: '123 Main St' } }
         ];
       }
-      return data || [];
     },
     enabled: !!user,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
 
   const { data: invoices } = useQuery({
     queryKey: ['invoices', user?.profile?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('user_id', user.profile.id);
-      
-      if (error) {
+      try {
+        const { data, error } = await supabase
+          .from('invoices')
+          .select('*')
+          .eq('user_id', user.profile.id);
+        
+        if (error) throw error;
+        return data || [];
+      } catch (error) {
+        console.error('Error fetching invoices:', error);
+        if (error.code === 'PGRST205' || error.message?.includes('not found')) {
+          console.warn('invoices table not found in schema cache. Returning mock data.');
+        }
         return [
-          { id: 'inv-1', description: 'Platform Service Fee', amount: 999, createdAt: '2024-03-01', status: 'paid' },
-          { id: 'inv-2', description: 'Rent Payment - March', amount: 25000, createdAt: '2024-03-05', status: 'paid' }
+          { id: 'inv-1', description: 'Platform Service Fee', amount: 999, created_at: '2024-03-01', status: 'paid' },
+          { id: 'inv-2', description: 'Rent Payment - March', amount: 25000, created_at: '2024-03-05', status: 'paid' }
         ];
       }
-      return data || [];
     },
     enabled: !!user,
+    retry: 2,
   });
 
   const { data: userLeases } = useQuery({
     queryKey: ['user-leases', user?.profile?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
-        .from('leases')
-        .select('*, properties(title, address)')
-        .eq('tenant_id', user.profile.id);
-      
-      if (error) {
+      try {
+        const { data, error } = await supabase
+          .from('leases')
+          .select('*, properties(title, address)')
+          .eq('tenant_id', user.profile.id);
+        
+        if (error) throw error;
+        return data || [];
+      } catch (error) {
+        console.error('Error fetching user leases:', error);
+        if (error.code === 'PGRST205' || error.message?.includes('not found')) {
+          console.warn('leases table not found in schema cache. Returning mock data.');
+        }
         return [
           { 
             id: 'lease-1', 
@@ -529,9 +546,9 @@ export default function Profile() {
           }
         ];
       }
-      return data || [];
     },
     enabled: !!user,
+    retry: 2,
   });
 
   const submitKycMutation = useMutation({
@@ -613,7 +630,8 @@ export default function Profile() {
       refetchBookings(); // Using this as a proxy to refresh profile data if needed, or ideally invalidate 'auth-user'
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to submit KYC');
+      logError(error, { action: 'profile.submitKyc' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'profile.submitKyc' }) || 'Failed to submit KYC');
     }
   });
 
@@ -644,7 +662,8 @@ export default function Profile() {
       toast.success('Availability settings saved!');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to save availability');
+      logError(error, { action: 'profile.saveAvailability' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'profile.saveAvailability' }) || 'Failed to save availability');
     }
   });
 
@@ -667,34 +686,34 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-secondary/30 to-background">
       <Header />
-      <main className="py-12 container mx-auto px-4 max-w-6xl">
+      <main className="py-4 pb-28 sm:py-12 container mx-auto px-4 max-w-6xl overflow-x-hidden">
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
-          <div>
-            <h1 className="text-4xl font-display font-bold text-foreground">My Dashboard</h1>
-            <p className="text-muted-foreground mt-1">Manage your profile, bookings, and preferences.</p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 sm:mb-10">
+          <div className="w-full">
+            <h1 className="text-xl xs:text-2xl sm:text-4xl font-display font-bold text-foreground">My Dashboard</h1>
+            <p className="text-muted-foreground mt-1 text-xs sm:text-base">Manage your profile, bookings, and preferences.</p>
           </div>
-          <Button variant="destructive" onClick={handleLogout} className="gap-2 shadow-sm hover:shadow-md transition-all">
+          <Button variant="destructive" onClick={handleLogout} className="w-full sm:w-auto gap-2 shadow-sm hover:shadow-md transition-all min-h-[44px] text-xs sm:text-sm">
             <LogOut className="w-4 h-4" /> Logout
           </Button>
         </div>
         
-        <div className="grid gap-8 lg:grid-cols-12">
+        <div className="grid gap-8 md:grid-cols-12">
           {/* Left Sidebar - Profile Card */}
-          <div className="lg:col-span-4 space-y-6">
-            <div className="bg-card/50 backdrop-blur-xl border border-border/50 rounded-2xl p-6 shadow-xl sticky top-24 overflow-hidden relative group">
+          <div className="md:col-span-4 space-y-6">
+            <div className="bg-card/50 backdrop-blur-xl border border-border/50 rounded-2xl p-3 sm:p-6 shadow-xl lg:sticky lg:top-24 overflow-hidden relative group">
               {/* Decorative Background */}
               <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent -z-10" />
               
               <div className="relative flex flex-col items-center text-center mb-6 mt-4">
                 <div className="relative mb-4">
-                  <div className="w-28 h-28 rounded-full border-4 border-background shadow-2xl overflow-hidden bg-secondary flex items-center justify-center relative group/avatar">
-                    {demoAvatarUrl ? (
-                      <img src={demoAvatarUrl} alt={user.profile.name} className="w-full h-full object-cover" />
+                  <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full border-4 border-background shadow-2xl overflow-hidden bg-secondary flex items-center justify-center relative group/avatar">
+                    {avatarPreviewUrl ? (
+                      <img src={avatarPreviewUrl} alt={user.profile.name} className="w-full h-full object-cover" />
                     ) : user.profile.avatarUrl ? (
                       <img src={user.profile.avatarUrl} alt={user.profile.name} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-4xl font-bold text-muted-foreground">
+                      <span className="text-3xl sm:text-4xl font-bold text-muted-foreground">
                         {user.profile.name?.[0]?.toUpperCase() || 'U'}
                       </span>
                     )}
@@ -708,29 +727,32 @@ export default function Profile() {
                   {/* Edit Button Badge */}
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-0 right-0 p-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:scale-110 transition-transform"
+                    className="absolute bottom-0 right-0 min-h-[44px] min-w-[44px] flex items-center justify-center group"
                     disabled={isUploading}
+                    aria-label="Edit avatar"
                   >
-                    {isUploading ? <span className="w-4 h-4 block rounded-full border-2 border-current border-t-transparent animate-spin" /> : <Edit2 className="w-4 h-4" />}
+                    <span className="p-2 bg-primary text-primary-foreground rounded-full shadow-lg group-hover:scale-110 transition-transform flex items-center justify-center">
+                      {isUploading ? <span className="w-4 h-4 block rounded-full border-2 border-current border-t-transparent animate-spin" /> : <Edit2 className="w-4 h-4" />}
+                    </span>
                   </button>
                   <input 
                     type="file" 
                     ref={fileInputRef} 
                     className="hidden" 
-                    accept="image/*"
+                    accept="image/png,image/jpeg,image/webp"
                     onChange={handleFileChange}
                   />
                 </div>
 
-                <h2 className="text-2xl font-bold text-foreground">{user.profile.name}</h2>
-                <p className="text-sm text-muted-foreground mb-4">{user.profile.email}</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-foreground break-words max-w-full px-2">{user.profile.name}</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-4 break-all max-w-full px-2">{user.profile.email}</p>
                 
-                <div className="flex flex-col gap-2 items-center">
-                  <div className="flex gap-2 justify-center">
-                    <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary uppercase text-[10px] tracking-wider">
+                <div className="flex flex-col gap-2 items-center w-full">
+                  <div className="flex flex-wrap gap-2 justify-center px-2">
+                    <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary uppercase text-[9px] sm:text-[10px] tracking-wider py-1 px-2 min-h-[24px]">
                       {user.profile.roles?.[0] || 'Member'}
                     </Badge>
-                    <Badge variant={user.profile.kycStatus === 'verified' ? 'verified' : 'secondary'} className="gap-1">
+                    <Badge variant={user.profile.kycStatus === 'verified' ? 'verified' : 'secondary'} className="gap-1 py-1 px-2 text-[9px] sm:text-[10px] min-h-[24px]">
                       {user.profile.kycStatus === 'verified' ? (
                         <>
                           <ShieldCheck className="w-3 h-3" /> Verified Owner
@@ -742,43 +764,49 @@ export default function Profile() {
                       )}
                     </Badge>
                   </div>
-                  <Badge variant="outline" className={cn("gap-1 font-bold", getTrustScoreColor(user.profile.trustScore))}>
+                  <Badge variant="outline" className={cn("gap-1 font-bold py-1 px-2 text-[9px] sm:text-[10px] min-h-[24px]", getTrustScoreColor(user.profile.trustScore))}>
                     <TrendingUp className="w-3 h-3" />
                     {user.profile.trustScore} {getTrustScoreLabel(user.profile.trustScore)}
                   </Badge>
                   {user.profile.kycStatus !== 'verified' && (
-                    <Button variant="link" size="sm" className="h-auto p-0 text-primary font-bold text-xs" onClick={() => handleTabChange('verification')}>
+                    <Button variant="link" size="sm" className="h-auto min-h-[44px] p-2 text-primary font-bold text-[11px] sm:text-xs text-center px-4" onClick={() => handleTabChange('verification')}>
                       Complete KYC to list properties →
                     </Button>
                   )}
                 </div>
               </div>
               
-              <div className="space-y-4 pt-6 border-t border-border/50">
-                <div className="flex items-center gap-3 text-sm p-3 rounded-lg hover:bg-secondary/50 transition-colors">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary">
+              <div className="space-y-3 pt-6 border-t border-border/50">
+                <div className="flex items-center gap-3 text-sm p-2 sm:p-3 rounded-lg hover:bg-secondary/50 transition-colors min-h-[44px]">
+                  <div className="p-2 bg-primary/10 rounded-full text-primary shrink-0">
                     <Phone className="w-4 h-4" />
                   </div>
-                  <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">Mobile Number</p>
-                    <p className="font-medium">{user.profile.mobile || 'Not provided'}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">Mobile Number</p>
+                    <p className="font-medium text-xs sm:text-sm truncate min-h-[20px]">{user.profile.mobile || 'Not provided'}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 text-sm p-3 rounded-lg hover:bg-secondary/50 transition-colors">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary">
+                <div className="flex items-center gap-3 text-sm p-2 sm:p-3 rounded-lg hover:bg-secondary/50 transition-colors min-h-[44px]">
+                  <div className="p-2 bg-primary/10 rounded-full text-primary shrink-0">
                     <Mail className="w-4 h-4" />
                   </div>
-                  <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">Email Address</p>
-                    <p className="font-medium truncate max-w-[200px]">{user.profile.email}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">Email Address</p>
+                    <p className="font-medium text-xs sm:text-sm truncate min-h-[20px]">{user.profile.email}</p>
                   </div>
                 </div>
               </div>
 
-              <Dialog open={isEditing} onOpenChange={setIsEditing}>
+              <Dialog
+                open={isEditing}
+                onOpenChange={(open) => {
+                  setIsEditing(open);
+                  if (!open) setEditAttempted(false);
+                }}
+              >
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full mt-6 gap-2">
+                  <Button variant="outline" className="w-full mt-6 gap-2 min-h-[44px] text-xs sm:text-sm">
                     <Edit2 className="w-4 h-4" /> Edit Profile
                   </Button>
                 </DialogTrigger>
@@ -794,7 +822,12 @@ export default function Profile() {
                         value={editName} 
                         onChange={(e) => setEditName(e.target.value)} 
                         placeholder="John Doe"
+                        aria-invalid={editAttempted && editName.trim().length < 2}
+                        className={cn(editAttempted && editName.trim().length < 2 && "border-destructive focus-visible:ring-destructive")}
                       />
+                      {editAttempted && editName.trim().length < 2 && (
+                        <p className="text-xs text-destructive">Name must be at least 2 characters long.</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="mobile">Mobile Number</Label>
@@ -803,9 +836,19 @@ export default function Profile() {
                         value={editMobile} 
                         onChange={(e) => setEditMobile(e.target.value)} 
                         placeholder="+91 99999 99999"
+                        aria-invalid={editAttempted && editMobile.trim().length > 0 && !/^\+?\d{10,15}$/.test(editMobile.trim())}
+                        className={cn(
+                          editAttempted &&
+                            editMobile.trim().length > 0 &&
+                            !/^\+?\d{10,15}$/.test(editMobile.trim()) &&
+                            "border-destructive focus-visible:ring-destructive"
+                        )}
                       />
+                      {editAttempted && editMobile.trim().length > 0 && !/^\+?\d{10,15}$/.test(editMobile.trim()) && (
+                        <p className="text-xs text-destructive">Enter a valid mobile number (10–15 digits).</p>
+                      )}
                     </div>
-                    <Button onClick={handleUpdateProfile} disabled={updateProfileMutation.isPending} className="w-full">
+                    <Button onClick={handleUpdateProfile} disabled={updateProfileMutation.isPending} className="w-full min-h-[44px]">
                       {updateProfileMutation.isPending ? 'Updating...' : 'Save Changes'}
                     </Button>
                   </div>
@@ -815,72 +858,72 @@ export default function Profile() {
           </div>
 
           {/* Right Content - Stats & Bookings */}
-          <div className="lg:col-span-8 space-y-8">
+          <div className="md:col-span-8 space-y-6 sm:space-y-8">
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-4">
               {[
               { label: 'Bookings', value: bookings?.length || 0, icon: Calendar },
               { label: 'Properties', value: subscriptionInfo?.used || 0, icon: MapPin },
               { label: 'Reviews', value: extraStats?.reviews || 0, icon: CheckCircle2 },
               { label: 'Saved', value: extraStats?.saved || 0, icon: Heart },
             ].map((stat, i) => (
-                <div key={i} className="bg-card/50 border border-border/50 rounded-xl p-4 flex flex-col items-center justify-center text-center hover:bg-card/80 transition-colors cursor-pointer group">
-                  <stat.icon className="w-6 h-6 text-muted-foreground mb-2 group-hover:text-primary transition-colors" />
-                  <span className="text-2xl font-bold">{stat.value}</span>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">{stat.label}</span>
+                <div key={i} className="bg-card/50 border border-border/50 rounded-xl p-2 sm:p-4 flex flex-col items-center justify-center text-center hover:bg-card/80 transition-colors cursor-pointer group min-h-[80px] xs:min-h-[90px] sm:min-h-[100px]">
+                  <stat.icon className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground mb-1 sm:mb-2 group-hover:text-primary transition-colors" />
+                  <span className="text-base xs:text-lg sm:text-2xl font-bold">{stat.value}</span>
+                  <span className="text-[9px] sm:text-xs text-muted-foreground uppercase tracking-wide truncate w-full px-1">{stat.label}</span>
                 </div>
               ))}
             </div>
 
             {/* Subscription Card */}
-            <div className="bg-card border border-border rounded-xl p-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-10">
+            <div className="bg-card border border-border rounded-xl p-4 sm:p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-4 opacity-10 hidden sm:block">
                 <Crown className="w-24 h-24 rotate-12" />
               </div>
               <div className="relative z-10">
-                <div className="flex justify-between items-start mb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                   <div>
-                    <h3 className="text-lg font-bold flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
                       <Crown className="w-5 h-5 text-primary" />
                       My Subscription
                     </h3>
-                    <p className="text-muted-foreground text-sm">Manage your plan and billing.</p>
+                    <p className="text-muted-foreground text-xs sm:text-sm">Manage your plan and billing.</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => navigate('/plans')}>
+                  <Button variant="outline" size="sm" onClick={() => navigate('/plans')} className="min-h-[44px] px-6 w-full sm:w-auto text-xs sm:text-sm">
                     {subscriptionInfo?.plan ? 'Upgrade Plan' : 'View Plans'}
                   </Button>
                 </div>
 
                 {subscriptionInfo?.plan ? (
-                  <div className="bg-secondary/30 rounded-lg p-4">
-                    <div className="flex justify-between items-center mb-2">
+                  <div className="bg-secondary/30 rounded-lg p-3 sm:p-4">
+                    <div className="flex justify-between items-center mb-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-lg">{subscriptionInfo.plan.name}</span>
+                        <span className="font-semibold text-base sm:text-lg">{subscriptionInfo.plan.name}</span>
                         {subscriptionInfo.plan.is_recommended && (
-                          <Badge variant="secondary" className="text-xs">PRO</Badge>
+                          <Badge variant="secondary" className="text-[10px] sm:text-xs">PRO</Badge>
                         )}
                       </div>
-                      <span className="font-bold text-lg">₹{subscriptionInfo.plan.price_monthly}<span className="text-sm font-normal text-muted-foreground">/mo</span></span>
+                      <span className="font-bold text-base sm:text-lg">₹{subscriptionInfo.plan.price_monthly}<span className="text-xs sm:text-sm font-normal text-muted-foreground">/mo</span></span>
                     </div>
                     
                     <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-[11px] sm:text-sm">
                         <span className="text-muted-foreground">Active Listings</span>
                         <span className="font-medium">{subscriptionInfo.used} of {subscriptionInfo.plan.max_listings || '∞'} used</span>
                       </div>
                       <Progress 
                         value={subscriptionInfo.plan.max_listings ? (subscriptionInfo.used / subscriptionInfo.plan.max_listings) * 100 : 0} 
-                        className="h-2" 
+                        className="h-1.5 sm:h-2" 
                       />
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-secondary/30 rounded-lg p-4 flex items-center justify-between">
+                  <div className="bg-secondary/30 rounded-lg p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium">Free Plan</p>
-                      <p className="text-sm text-muted-foreground">Limited features active.</p>
+                      <p className="font-medium text-sm sm:text-base">Free Plan</p>
+                      <p className="text-[11px] sm:text-sm text-muted-foreground">Limited features active.</p>
                     </div>
-                    <Button size="sm" onClick={() => navigate('/plans')}>Subscribe Now</Button>
+                    <Button size="sm" onClick={() => navigate('/plans')} className="min-h-[44px] px-6 w-full sm:w-auto text-xs sm:text-sm">Subscribe Now</Button>
                   </div>
                 )}
               </div>
@@ -889,168 +932,207 @@ export default function Profile() {
           {/* Right Content - Activities & Tabs */}
           <div className="lg:col-span-8">
             <Tabs value={defaultTab} onValueChange={handleTabChange} className="w-full">
-              <div className="overflow-x-auto no-scrollbar pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-                <TabsList className="inline-flex w-max min-w-full sm:flex sm:flex-wrap gap-1 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-auto rounded-xl">
-                  <TabsTrigger value="activity" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <Clock className="w-4 h-4" /> Activity
+              <div className="pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+                <TabsList className="w-full grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-7 gap-1 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-auto rounded-xl">
+                  <TabsTrigger value="activity" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Activity
                   </TabsTrigger>
-                  <TabsTrigger value="properties" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <Building2 className="w-4 h-4" /> Properties
+                  <TabsTrigger value="properties" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Properties
                   </TabsTrigger>
-                  <TabsTrigger value="payments" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <CreditCard className="w-4 h-4" /> Payments
+                  <TabsTrigger value="bookings" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Bookings
                   </TabsTrigger>
-                  <TabsTrigger value="leases" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <FileText className="w-4 h-4" /> Leases
+                  <TabsTrigger value="payments" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Payments
                   </TabsTrigger>
-                  <TabsTrigger value="messages" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <MessageSquare className="w-4 h-4" /> Messages
+                  <TabsTrigger value="leases" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Leases
                   </TabsTrigger>
-                  <TabsTrigger value="saved" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <Heart className="w-4 h-4" /> Saved
+                  <TabsTrigger value="messages" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Messages
                   </TabsTrigger>
-                  <TabsTrigger value="verification" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <ShieldCheck className="w-4 h-4" /> Verification
+                  <TabsTrigger value="saved" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <Heart className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Saved
                   </TabsTrigger>
-                  <TabsTrigger value="availability" className="px-4 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center gap-2 font-bold text-xs sm:text-sm">
-                    <Calendar className="w-4 h-4" /> Availability
+                  <TabsTrigger value="availability" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Availability
+                  </TabsTrigger>
+                  <TabsTrigger value="verification" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
+                    <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> KYC
                   </TabsTrigger>
                 </TabsList>
               </div>
 
               <TabsContent value="activity" className="space-y-6">
                 {/* Analytics Section */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                  <div className="bg-card/50 border border-border/50 p-5 rounded-2xl">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-card/50 border border-border/50 p-4 sm:p-5 rounded-2xl">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
                         <TrendingUp className="w-5 h-5" />
                       </div>
-                      <span className="text-sm font-medium text-muted-foreground">Total Views</span>
+                      <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Views</span>
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <h4 className="text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.views || 0), 0) || 0}</h4>
-                      <span className="text-xs text-green-500 font-medium">+12% vs last month</span>
+                      <h4 className="text-2xl sm:text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.views || 0), 0) || 0}</h4>
+                      <span className="text-[10px] sm:text-xs text-green-500 font-medium">+12% vs last month</span>
                     </div>
                   </div>
                   
-                  <div className="bg-card/50 border border-border/50 p-5 rounded-2xl">
+                  <div className="bg-card/50 border border-border/50 p-4 sm:p-5 rounded-2xl">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="p-2 bg-purple-500/10 rounded-lg text-purple-500">
                         <UsersIcon className="w-5 h-5" />
                       </div>
-                      <span className="text-sm font-medium text-muted-foreground">Active Inquiries</span>
+                      <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Active Inquiries</span>
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <h4 className="text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.leads || 0), 0) || 0}</h4>
-                      <span className="text-xs text-green-500 font-medium">+5 new today</span>
+                      <h4 className="text-2xl sm:text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.leads || 0), 0) || 0}</h4>
+                      <span className="text-[10px] sm:text-xs text-green-500 font-medium">+5 new today</span>
                     </div>
                   </div>
 
-                  <div className="bg-card/50 border border-border/50 p-5 rounded-2xl">
+                  <div className="bg-card/50 border border-border/50 p-4 sm:p-5 rounded-2xl">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="p-2 bg-green-500/10 rounded-lg text-green-500">
                         <ShieldCheck className="w-5 h-5" />
                       </div>
-                      <span className="text-sm font-medium text-muted-foreground">Visits Verified</span>
+                      <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Visits Verified</span>
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <h4 className="text-3xl font-bold">{bookings?.filter(b => b.booking_status === 'completed').length || 0}</h4>
-                      <span className="text-xs text-muted-foreground font-medium">Out of {bookings?.length || 0} total</span>
+                      <h4 className="text-2xl sm:text-3xl font-bold">{bookings?.filter(b => b.booking_status === 'completed').length || 0}</h4>
+                      <span className="text-[10px] sm:text-xs text-muted-foreground font-medium">Out of {bookings?.length || 0} total</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Recent Bookings */}
                 <div>
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xl font-bold">Recent Bookings</h3>
-                    <Button variant="ghost" size="sm" onClick={() => navigate('/services')}>New Booking</Button>
-                  </div>
+<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+  <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-center sm:text-left">
+    Recent Bookings
+  </h3>
+
+  <Button
+    variant="ghost"
+    size="sm"
+    className="min-h-[44px] w-full sm:w-auto text-sm sm:text-base"
+    onClick={() => navigate('/services')}
+  >
+    New Booking
+  </Button>
+</div>
 
                   {bookings && bookings.length > 0 ? (
-                    <div className="space-y-4">
-                      {bookings.map((booking) => (
-                        <div 
-                          key={booking.id} 
-                          className="group bg-card hover:bg-card/80 border border-border/50 rounded-xl p-4 flex flex-col sm:flex-row gap-4 transition-all hover:shadow-lg hover:border-primary/20"
-                        >
-                          <div className="w-full sm:w-32 h-32 sm:h-auto rounded-lg overflow-hidden shrink-0 relative">
-                            <img 
-                              src={booking.services?.image_url} 
-                              alt={booking.services?.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                              <span className="text-white text-xs font-medium">{booking.services?.name}</span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
-                            <div>
-                              <div className="flex justify-between items-start mb-2">
-                                <div>
-                                  <h4 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{booking.properties?.title || 'Property Visit'}</h4>
-                                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" /> {booking.properties?.address || 'Location'}
-                                  </p>
-                                </div>
-                                <Badge 
-                                  variant={
-                                    booking.booking_status === 'confirmed' ? 'default' :
-                                    booking.booking_status === 'completed' ? 'secondary' :
-                                    'outline'
-                                  }
-                                  className={
-                                    booking.booking_status === 'confirmed' ? 'bg-green-500 hover:bg-green-600' :
-                                    booking.booking_status === 'pending' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-200' : ''
-                                  }
-                                >
-                                  {booking.booking_status}
-                                </Badge>
-                              </div>
-                              
-                              <p className="text-sm text-muted-foreground line-clamp-1 mb-3">
-                                {booking.properties?.address}
-                              </p>
-                            </div>
+                  <div className="space-y-4 px-2 sm:px-0">
+  {bookings.map((booking) => (
+    <div
+      key={booking.id}
+      className="group bg-card hover:bg-card/80 border border-border/50 rounded-xl p-3 sm:p-4 flex flex-col md:flex-row gap-4 transition-all duration-300 hover:shadow-lg hover:border-primary/20"
+    >
+      {/* Image Section */}
+      <div className="w-full md:w-40 h-44 sm:h-52 md:h-auto rounded-lg overflow-hidden shrink-0 relative">
+        <img
+          src={booking.services?.image_url}
+          alt={booking.services?.name}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+          <span className="text-white text-xs sm:text-sm font-medium truncate">
+            {booking.services?.name}
+          </span>
+        </div>
+      </div>
 
-                            <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground border-t border-border/50 pt-3 mt-auto">
-                              <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
-                                <Calendar className="w-3 h-3" />
-                                {new Date(booking.visit_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                              </span>
-                              <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded">
-                                <Clock className="w-3 h-3" />
-                                {booking.visit_time}
-                              </span>
-                              {booking.booking_status === 'confirmed' && booking.tenant_id === user.profile.id && (
-                                <Button 
-                                  size="sm" 
-                                  variant="default" 
-                                  className="ml-auto h-7 px-3 text-[10px] font-bold rounded-lg gap-1 shadow-md shadow-primary/20"
-                                  onClick={() => {
-                                    setSelectedBookingForOTP({
-                                      id: booking.id,
-                                      propertyTitle: booking.properties?.title || 'Property Visit',
-                                      date: new Date(booking.visit_date).toLocaleDateString(),
-                                      time: booking.visit_time,
-                                      address: booking.properties?.address || '',
-                                      tenant_id: booking.tenant_id,
-                                      owner_id: booking.owner_id
-                                    });
-                                    setIsOTPOpen(true);
-                                  }}
-                                >
-                                  <ShieldCheck className="w-3 h-3" />
-                                  Verify Visit
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+      {/* Content Section */}
+      <div className="flex-1 min-w-0 flex flex-col justify-between">
+        {/* Header */}
+        <div>
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-3">
+            <div className="min-w-0">
+              <h4 className="font-bold text-base sm:text-lg md:text-xl text-foreground group-hover:text-primary transition-colors truncate">
+                {booking.properties?.title || "Property Visit"}
+              </h4>
+
+              <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 truncate">
+                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                {booking.properties?.address || "Location"}
+              </p>
+            </div>
+
+            <Badge
+              variant={
+                booking.booking_status === "confirmed"
+                  ? "default"
+                  : booking.booking_status === "completed"
+                  ? "secondary"
+                  : "outline"
+              }
+              className={cn(
+                "self-start sm:self-auto text-[10px] sm:text-xs px-2 py-1",
+                booking.booking_status === "confirmed"
+                  ? "bg-green-500 hover:bg-green-600 text-white"
+                  : booking.booking_status === "pending"
+                  ? "bg-yellow-500/10 text-yellow-600 border-yellow-200"
+                  : ""
+              )}
+            >
+              {booking.booking_status}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Footer Info */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-[11px] sm:text-xs font-medium text-muted-foreground border-t border-border/50 pt-3 mt-3">
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 sm:gap-4">
+            <span className="flex items-center gap-1.5 bg-secondary/50 px-3 py-2 rounded-md min-h-[36px]">
+              <Calendar className="w-3.5 h-3.5" />
+              {new Date(booking.visit_date).toLocaleDateString(undefined, {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </span>
+
+            <span className="flex items-center gap-1.5 bg-secondary/50 px-3 py-2 rounded-md min-h-[36px]">
+              <Clock className="w-3.5 h-3.5" />
+              {booking.visit_time}
+            </span>
+          </div>
+
+          {/* CTA Button */}
+          {booking.booking_status === "confirmed" &&
+            booking.tenant_id === user.profile.id && (
+              <Button
+                size="sm"
+                variant="default"
+                className="w-full sm:w-auto sm:ml-auto min-h-[44px] px-5 text-xs sm:text-sm font-semibold rounded-lg gap-2 shadow-md shadow-primary/20"
+                onClick={() => {
+                  setSelectedBookingForOTP({
+                    id: booking.id,
+                    propertyTitle:
+                      booking.properties?.title || "Property Visit",
+                    date: new Date(
+                      booking.visit_date
+                    ).toLocaleDateString(),
+                    time: booking.visit_time,
+                    address: booking.properties?.address || "",
+                    tenant_id: booking.tenant_id,
+                    owner_id: booking.owner_id,
+                  });
+                  setIsOTPOpen(true);
+                }}
+              >
+                <ShieldCheck className="w-4 h-4" />
+                Verify Visit
+              </Button>
+            )}
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
                   ) : (
                     <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
                       <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
@@ -1060,7 +1142,7 @@ export default function Profile() {
                       <p className="text-muted-foreground max-w-xs mx-auto mb-6">
                         Book your first home service today and track it here.
                       </p>
-                      <Button onClick={() => navigate('/services')}>
+                      <Button onClick={() => navigate('/services')} className="min-h-[44px]">
                         Explore Services
                       </Button>
                     </div>
@@ -1069,12 +1151,12 @@ export default function Profile() {
               </TabsContent>
 
               <TabsContent value="properties" className="space-y-6">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
                   <div>
                     <h3 className="text-xl font-bold">My Listed Properties</h3>
                     <p className="text-sm text-muted-foreground">Manage your active listings and track their performance.</p>
                   </div>
-                  <Button onClick={() => navigate('/post-property')} className="gap-2">
+                  <Button onClick={() => navigate('/post-property')} className="w-full sm:w-auto gap-2 min-h-[44px]">
                     <Plus className="w-4 h-4" /> Post New
                   </Button>
                 </div>
@@ -1097,17 +1179,17 @@ export default function Profile() {
                         }} />
                         <div className="flex items-center justify-between px-2">
                           <div className="flex gap-4">
-                            <div className="text-xs flex items-center gap-1 text-muted-foreground">
+                            <div className="text-xs flex items-center gap-1 text-muted-foreground min-h-[32px]">
                               <Eye className="w-3 h-3" /> {property.views || 0}
                             </div>
-                            <div className="text-xs flex items-center gap-1 text-muted-foreground">
+                            <div className="text-xs flex items-center gap-1 text-muted-foreground min-h-[32px]">
                               <UsersIcon className="w-3 h-3" /> {property.leads || 0}
                             </div>
                           </div>
                           <Button
                             size="sm"
                             variant={property.is_available ? 'outline' : 'default'}
-                            className="h-8 text-[10px] font-bold uppercase tracking-wider"
+                            className="h-11 min-h-[44px] text-[10px] font-bold uppercase tracking-wider px-4"
                             onClick={() =>
                               togglePropertyStatusMutation.mutate({ id: property.id, isActive: !property.is_available })
                             }
@@ -1127,7 +1209,7 @@ export default function Profile() {
                     <p className="text-muted-foreground max-w-xs mx-auto mb-6">
                       List your first property and reach thousands of verified tenants.
                     </p>
-                    <Button onClick={() => navigate('/post-property')}>
+                    <Button onClick={() => navigate('/post-property')} className="min-h-[44px]">
                       Post a Property
                     </Button>
                   </div>
@@ -1135,26 +1217,26 @@ export default function Profile() {
               </TabsContent>
 
               <TabsContent value="payments" className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   {/* Rent Schedule */}
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-xl font-bold flex items-center gap-2">
+                  <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 sm:mb-6">
+                      <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-primary" />
                         Rent Schedule
                       </h3>
                     </div>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       {rentSchedule && rentSchedule.length > 0 ? (
-                        rentSchedule.map((rent: any) => (
-                          <div key={rent.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-xl border border-border/50">
-                            <div>
-                              <p className="font-bold text-sm">{rent.properties?.title}</p>
-                              <p className="text-xs text-muted-foreground">Due: {new Date(rent.dueDate).toLocaleDateString()}</p>
+                        rentSchedule.map((rent) => (
+                          <div key={rent.id} className="flex items-center justify-between p-3 sm:p-4 bg-secondary/20 rounded-xl border border-border/50">
+                            <div className="min-w-0 flex-1 mr-2">
+                              <p className="font-bold text-xs sm:text-sm truncate">{rent.properties?.title}</p>
+                              <p className="text-[10px] sm:text-xs text-muted-foreground">Due: {new Date(rent.due_date).toLocaleDateString()}</p>
                             </div>
-                            <div className="text-right">
-                              <p className="font-bold text-primary">₹{rent.amount.toLocaleString()}</p>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-primary text-xs sm:text-sm">₹{rent.amount.toLocaleString()}</p>
                               <Badge variant={rent.status === 'paid' ? 'default' : 'outline'} className="text-[10px] h-5">
                                 {rent.status}
                               </Badge>
@@ -1162,30 +1244,30 @@ export default function Profile() {
                           </div>
                         ))
                       ) : (
-                        <p className="text-center py-8 text-muted-foreground">No upcoming rent payments.</p>
+                        <p className="text-center py-8 text-muted-foreground text-sm">No upcoming rent payments.</p>
                       )}
                     </div>
                   </div>
 
                   {/* Invoices */}
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-xl font-bold flex items-center gap-2">
+                  <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 sm:mb-6">
+                      <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
                         <Receipt className="w-5 h-5 text-primary" />
                         Recent Invoices
                       </h3>
                     </div>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       {invoices && invoices.length > 0 ? (
-                        invoices.map((inv: any) => (
-                          <div key={inv.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-xl border border-border/50">
-                            <div>
-                              <p className="font-bold text-sm">{inv.description}</p>
-                              <p className="text-xs text-muted-foreground">{new Date(inv.createdAt).toLocaleDateString()}</p>
+                        invoices.map((inv) => (
+                          <div key={inv.id} className="flex items-center justify-between p-3 sm:p-4 bg-secondary/20 rounded-xl border border-border/50">
+                            <div className="min-w-0 flex-1 mr-2">
+                              <p className="font-bold text-xs sm:text-sm truncate">{inv.description}</p>
+                              <p className="text-[10px] sm:text-xs text-muted-foreground">{new Date(inv.created_at).toLocaleDateString()}</p>
                             </div>
-                            <div className="text-right">
-                              <p className="font-bold">₹{inv.amount.toLocaleString()}</p>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-xs sm:text-sm">₹{inv.amount.toLocaleString()}</p>
                               <Badge variant="secondary" className="text-[10px] h-5">
                                 {inv.status || 'Paid'}
                               </Badge>
@@ -1193,7 +1275,7 @@ export default function Profile() {
                           </div>
                         ))
                       ) : (
-                        <p className="text-center py-8 text-muted-foreground">No invoices found.</p>
+                        <p className="text-center py-8 text-muted-foreground text-sm">No invoices found.</p>
                       )}
                     </div>
                   </div>
@@ -1201,46 +1283,46 @@ export default function Profile() {
               </TabsContent>
 
               <TabsContent value="leases" className="space-y-6">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 mb-6">
                   <h3 className="text-xl font-bold">My Active Leases</h3>
                 </div>
 
                 {userLeases && userLeases.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {userLeases.map((lease: any) => (
-                      <div key={lease.id} className="bg-card rounded-2xl border border-border p-6 shadow-sm hover:border-primary/30 transition-all">
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <h4 className="font-bold text-lg">{lease.properties?.title}</h4>
-                            <p className="text-sm text-muted-foreground">{lease.properties?.address}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    {userLeases.map((lease) => (
+                      <div key={lease.id} className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm hover:border-primary/30 transition-all">
+                        <div className="flex justify-between items-start mb-4 gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-bold text-base sm:text-lg truncate">{lease.properties?.title}</h4>
+                            <p className="text-xs sm:text-sm text-muted-foreground truncate">{lease.properties?.address}</p>
                           </div>
-                          <Badge className="bg-green-500">{lease.status}</Badge>
+                          <Badge className="bg-green-500 shrink-0 text-[10px] sm:text-xs">{lease.status}</Badge>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-4 py-4 border-y border-border/50 my-4">
+                        <div className="grid grid-cols-2 gap-3 sm:gap-4 py-4 border-y border-border/50 my-4">
                           <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Start Date</p>
-                            <p className="font-medium text-sm">{new Date(lease.start_date).toLocaleDateString()}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">Start Date</p>
+                            <p className="font-medium text-xs sm:text-sm">{new Date(lease.start_date).toLocaleDateString()}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">End Date</p>
-                            <p className="font-medium text-sm">{new Date(lease.end_date).toLocaleDateString()}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">End Date</p>
+                            <p className="font-medium text-xs sm:text-sm">{new Date(lease.end_date).toLocaleDateString()}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Monthly Rent</p>
-                            <p className="font-bold text-sm text-primary">₹{lease.monthly_rent?.toLocaleString()}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">Monthly Rent</p>
+                            <p className="font-bold text-xs sm:text-sm text-primary">₹{lease.monthly_rent?.toLocaleString()}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Lease ID</p>
-                            <p className="font-medium text-sm">#{lease.id.slice(0, 8)}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">Lease ID</p>
+                            <p className="font-medium text-xs sm:text-sm truncate">#{lease.id.slice(0, 8)}</p>
                           </div>
                         </div>
 
-                        <div className="flex gap-2 mt-4">
-                          <Button variant="outline" size="sm" className="w-full gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                          <Button variant="outline" size="sm" className="w-full gap-2 min-h-[44px]">
                             <FileText className="w-4 h-4" /> View Agreement
                           </Button>
-                          <Button variant="outline" size="sm" className="w-full gap-2">
+                          <Button variant="outline" size="sm" className="w-full gap-2 min-h-[44px]">
                             <Info className="w-4 h-4" /> Details
                           </Button>
                         </div>
@@ -1252,7 +1334,7 @@ export default function Profile() {
                     <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                     <h4 className="font-bold text-lg mb-2">No active leases</h4>
                     <p className="text-muted-foreground max-w-xs mx-auto mb-6">You don't have any active rental agreements at the moment.</p>
-                    <Button onClick={() => navigate('/properties')}>Browse Properties</Button>
+                    <Button onClick={() => navigate('/properties')} className="min-h-[44px]">Browse Properties</Button>
                   </div>
                 )}
               </TabsContent>
@@ -1272,7 +1354,7 @@ export default function Profile() {
                     </div>
                     <h4 className="text-lg font-bold mb-2">No messages yet</h4>
                     <p className="text-muted-foreground max-w-xs">Your conversations with property owners and tenants will appear here.</p>
-                    <Button variant="outline" className="mt-6" onClick={() => navigate('/properties')}>
+                    <Button variant="outline" className="mt-6 min-h-[44px]" onClick={() => navigate('/properties')}>
                       Start a Conversation
                     </Button>
                   </div>
@@ -1281,7 +1363,7 @@ export default function Profile() {
 
               <TabsContent value="saved" className="space-y-6">
                 <div>
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 mb-6">
                     <h3 className="text-xl font-bold">Saved Properties</h3>
                     <p className="text-sm text-muted-foreground">{savedProperties?.length || 0} properties</p>
                   </div>
@@ -1294,12 +1376,12 @@ export default function Profile() {
                     </div>
                   ) : savedProperties && savedProperties.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      {savedProperties.map((property: any) => (
+                      {savedProperties.map((property) => (
                         <PropertyCard key={property.id} property={property} />
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
+                    <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center p-4">
                       <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
                         <Building2 className="w-8 h-8 text-muted-foreground" />
                       </div>
@@ -1307,7 +1389,7 @@ export default function Profile() {
                       <p className="text-muted-foreground max-w-xs mx-auto mb-6">
                         Save properties you like to view them later.
                       </p>
-                      <Button onClick={() => navigate('/properties')}>
+                      <Button className="min-h-[44px]" onClick={() => navigate('/properties')}>
                         Browse Properties
                       </Button>
                     </div>
@@ -1315,24 +1397,24 @@ export default function Profile() {
                 </div>
               </TabsContent>
               <TabsContent value="availability" className="space-y-6">
-                 <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-                   <div className="flex items-center justify-between mb-6">
+                 <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
+                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                      <div className="flex items-center gap-3">
-                       <div className="p-3 bg-primary/10 rounded-xl text-primary">
-                         <Calendar className="w-6 h-6" />
+                       <div className="p-2 sm:p-3 bg-primary/10 rounded-xl text-primary">
+                         <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
                        </div>
                        <div>
-                         <h3 className="text-xl font-bold">Manage Visit Availability</h3>
-                         <p className="text-sm text-muted-foreground">Set your available days and time slots for property visits.</p>
-                  </div>
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="gap-2" 
-                  onClick={() => saveAvailabilityMutation.mutate()}
-                  disabled={saveAvailabilityMutation.isPending}
-                >
+                         <h3 className="text-lg sm:text-xl font-bold">Manage Visit Availability</h3>
+                         <p className="text-xs sm:text-sm text-muted-foreground">Set your available days and time slots for property visits.</p>
+                       </div>
+                     </div>
+                     <Button 
+                       variant="outline" 
+                       size="sm" 
+                       className="gap-2 min-h-[44px] w-full sm:w-auto text-xs sm:text-sm" 
+                       onClick={() => saveAvailabilityMutation.mutate()}
+                       disabled={saveAvailabilityMutation.isPending}
+                     >
                   {saveAvailabilityMutation.isPending ? (
                     <span className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
                   ) : (
@@ -1348,22 +1430,22 @@ export default function Profile() {
                     <div className="w-1.5 h-6 bg-primary rounded-full" />
                     Select Available Days
                   </h4>
-                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                      <button
-                        key={day}
-                        onClick={() => toggleDay(day)}
-                        className={cn(
-                          "py-3 rounded-xl border text-xs font-bold transition-all",
-                          availableDays.includes(day)
-                            ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                            : "bg-background border-border hover:border-primary/50"
-                        )}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
+                  <div className="grid grid-cols-2 xs:grid-cols-4 md:grid-cols-7 gap-2">
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                    <button
+                      key={day}
+                      onClick={() => toggleDay(day)}
+                      className={cn(
+                        "py-4 min-h-[44px] rounded-xl border text-xs font-bold transition-all flex items-center justify-center",
+                        availableDays.includes(day)
+                          ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
+                          : "bg-background border-border hover:border-primary/50"
+                      )}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
                   <p className="text-xs text-muted-foreground italic">
                     * Weekends are highly recommended for higher visit rates.
                   </p>
@@ -1374,36 +1456,41 @@ export default function Profile() {
                     <div className="w-1.5 h-6 bg-primary rounded-full" />
                     Set Time Slots
                   </h4>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
                     {timeSlots.map((item) => (
                       <div
                         key={item.id}
                         className={cn(
-                          "flex items-center justify-between p-3 rounded-xl border transition-all relative group/slot",
+                          "flex items-center justify-between p-3 min-h-[44px] rounded-xl border transition-all relative group/slot",
                           item.active ? "bg-primary/5 border-primary/30" : "bg-background border-border"
                         )}
                       >
-                        <div className="flex-1 cursor-pointer" onClick={() => toggleSlot(item.id)}>
+                        <div className="flex-1 cursor-pointer flex items-center min-h-[44px]" onClick={() => toggleSlot(item.id)}>
                           <span className={cn("text-xs font-medium", item.active ? "text-primary" : "text-muted-foreground")}>
                             {item.slot}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div 
+                          <button
+                            type="button"
                             onClick={() => toggleSlot(item.id)}
-                            className={cn(
-                              "w-4 h-4 rounded-full border-2 flex items-center justify-center cursor-pointer",
-                              item.active ? "border-primary bg-primary" : "border-muted-foreground/30"
-                            )}
+                            className="min-h-[44px] min-w-[44px] flex items-center justify-center"
                           >
-                            {item.active && <CheckCircle2 className="w-3 h-3 text-white" />}
-                          </div>
+                            <span
+                              className={cn(
+                                "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
+                                item.active ? "border-primary bg-primary" : "border-muted-foreground/30 hover:border-primary/50"
+                              )}
+                            >
+                              {item.active && <CheckCircle2 className="w-4 h-4 text-white" />}
+                            </span>
+                          </button>
                           {timeSlots.length > 4 && (
                             <button 
                               onClick={() => removeSlot(item.id)}
-                              className="text-muted-foreground hover:text-destructive opacity-0 group-hover/slot:opacity-100 transition-opacity"
+                              className="w-11 h-11 flex items-center justify-center text-muted-foreground hover:text-destructive opacity-0 group-hover/slot:opacity-100 transition-opacity"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>
@@ -1413,7 +1500,7 @@ export default function Profile() {
 
                   <Dialog open={isAddSlotOpen} onOpenChange={setIsAddSlotOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="w-full border border-dashed border-border rounded-xl h-10 text-muted-foreground hover:text-primary">
+                      <Button variant="ghost" size="sm" className="w-full border border-dashed border-border rounded-xl min-h-[44px] text-muted-foreground hover:text-primary">
                         <Plus className="w-4 h-4 mr-2" /> Add custom slot
                       </Button>
                     </DialogTrigger>
@@ -1428,6 +1515,7 @@ export default function Profile() {
                             <Input 
                               type="time" 
                               value={newSlotStart} 
+                              className="min-h-[44px]"
                               onChange={(e) => setNewSlotStart(e.target.value)} 
                             />
                           </div>
@@ -1436,18 +1524,19 @@ export default function Profile() {
                             <Input 
                               type="time" 
                               value={newSlotEnd} 
+                              className="min-h-[44px]"
                               onChange={(e) => setNewSlotEnd(e.target.value)} 
                             />
                           </div>
                         </div>
-                        <Button onClick={handleAddCustomSlot} className="w-full">Add Slot</Button>
+                        <Button onClick={handleAddCustomSlot} className="w-full min-h-[44px]">Add Slot</Button>
                       </div>
                     </DialogContent>
                   </Dialog>
                 </div>
               </div>
 
-                   <div className="mt-8 pt-6 border-t border-border/50 bg-secondary/10 -mx-6 -mb-6 px-6 pb-6 rounded-b-2xl">
+                   <div className="mt-8 pt-6 border-t border-border/50 bg-secondary/10 px-6 pb-6 rounded-b-2xl">
                      <div className="flex items-start gap-3">
                        <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                        <div className="space-y-1">
@@ -1462,14 +1551,16 @@ export default function Profile() {
                  </div>
                </TabsContent>
                <TabsContent value="verification" className="space-y-6">
-                <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 bg-primary/10 rounded-xl text-primary">
-                      <ShieldCheck className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold">Owner Verification (KYC)</h3>
-                      <p className="text-sm text-muted-foreground">Get verified to list properties and build trust with tenants.</p>
+                <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 sm:p-3 bg-primary/10 rounded-xl text-primary">
+                        <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg sm:text-xl font-bold">Owner Verification (KYC)</h3>
+                        <p className="text-xs sm:text-sm text-muted-foreground">Get verified to list properties and build trust with tenants.</p>
+                      </div>
                     </div>
                   </div>
 
@@ -1482,7 +1573,7 @@ export default function Profile() {
                       <p className="text-green-600/80 max-w-md mx-auto mb-6">
                         Your account has been successfully verified. You now have access to premium listing features and a verified badge.
                       </p>
-                      <Button onClick={() => navigate('/post-property')} variant="default" className="bg-green-600 hover:bg-green-700">
+                      <Button onClick={() => navigate('/post-property')} variant="default" className="bg-green-600 hover:bg-green-700 min-h-[44px]">
                         Post a Property
                       </Button>
                     </div>
@@ -1517,7 +1608,7 @@ export default function Profile() {
                               value={kycForm.fullName} 
                               onChange={(e) => setKycForm(prev => ({ ...prev, fullName: e.target.value }))}
                               placeholder="JOHN DOE" 
-                              className="uppercase" 
+                              className="uppercase min-h-[44px]" 
                             />
                           </div>
                           <div className="space-y-2">
@@ -1527,7 +1618,7 @@ export default function Profile() {
                               value={kycForm.panNumber} 
                               onChange={(e) => setKycForm(prev => ({ ...prev, panNumber: e.target.value }))}
                               placeholder="ABCDE1234F" 
-                              className="uppercase" 
+                              className="uppercase min-h-[44px]" 
                             />
                           </div>
                           <div className="space-y-2">
@@ -1538,6 +1629,7 @@ export default function Profile() {
                               onChange={(e) => setKycForm(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
                               placeholder="1234" 
                               maxLength={4} 
+                              className="min-h-[44px]"
                             />
                           </div>
                         </div>
@@ -1575,7 +1667,7 @@ export default function Profile() {
                                 key={doc.type}
                                 onClick={() => doc.ref.current?.click()}
                                 className={cn(
-                                  "flex flex-col items-center justify-center p-4 border border-dashed rounded-xl transition-colors group relative",
+                                  "flex flex-col items-center justify-center p-4 min-h-[80px] border border-dashed rounded-xl transition-colors group relative",
                                   kycFiles[doc.key as keyof typeof kycFiles] ? "bg-primary/5 border-primary" : "border-border hover:bg-secondary/50"
                                 )}
                               >
@@ -1596,7 +1688,7 @@ export default function Profile() {
 
                       <div className="pt-4 border-t border-border">
                         <Button 
-                          className="w-full h-12 rounded-xl font-bold gap-2" 
+                          className="w-full h-12 min-h-[44px] rounded-xl font-bold gap-2" 
                           onClick={() => submitKycMutation.mutate()}
                           disabled={submitKycMutation.isPending || !kycForm.panNumber || !kycForm.aadhaarNumber}
                         >
@@ -1635,4 +1727,3 @@ export default function Profile() {
     </div>
   );
 }
-

@@ -11,6 +11,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { notificationService } from '@/lib/notificationService';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 interface BookingDialogProps {
   property: Property;
@@ -128,7 +129,7 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
 
       return { booking, payment };
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data) => {
       const { booking, payment } = data;
       toast.success('Visit booked successfully! ₹99 Token Paid and held in Escrow.');
       
@@ -148,7 +149,8 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
       setStep('slots');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to book visit');
+      logError(error, { action: 'booking.create' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'booking.create' }) || 'Failed to book visit');
     }
   });
 

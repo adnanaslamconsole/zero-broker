@@ -14,15 +14,19 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { motion, AnimatePresence } from 'framer-motion';
+import { assertEmailNotDisposable } from '@/lib/disposableEmailGuard';
 
 export default function Login() {
-  const { loginWithOtp, verifyOtp, isLoading, user } = useAuth();
+  const { loginWithOtp, verifyOtp, user } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [role, setRole] = useState<'tenant' | 'owner'>('tenant');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'method' | 'otp'>('method');
   const [timer, setTimer] = useState(0);
   const navigate = useNavigate();
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
   // Redirect if already logged in or if user state changes (e.g. logout)
   useEffect(() => {
@@ -34,6 +38,9 @@ export default function Login() {
       setOtp('');
       setStep('method');
       setError('');
+      setIsSendingOtp(false);
+      setIsResendingOtp(false);
+      setIsVerifyingOtp(false);
     }
   }, [user, navigate]);
 
@@ -73,9 +80,23 @@ export default function Login() {
     const type = isEmail ? 'email' : 'phone';
     const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
 
-    await loginWithOtp(formattedIdentifier, type, undefined, role);
-    setStep('otp');
-    setTimer(60);
+    if (isEmail) {
+      try {
+        await assertEmailNotDisposable(formattedIdentifier);
+      } catch (err) {
+        setError((err as Error).message);
+        return;
+      }
+    }
+
+    setIsSendingOtp(true);
+    try {
+      await loginWithOtp(formattedIdentifier, type, undefined, role);
+      setStep('otp');
+      setTimer(60);
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   const handleResendOtp = async () => {
@@ -83,8 +104,21 @@ export default function Login() {
     const isEmail = identifier.includes('@');
     const type = isEmail ? 'email' : 'phone';
     const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
-    await loginWithOtp(formattedIdentifier, type, undefined, role);
-    setTimer(60);
+    if (isEmail) {
+      try {
+        await assertEmailNotDisposable(formattedIdentifier);
+      } catch (err) {
+        setError((err as Error).message);
+        return;
+      }
+    }
+    setIsResendingOtp(true);
+    try {
+      await loginWithOtp(formattedIdentifier, type, undefined, role);
+      setTimer(60);
+    } finally {
+      setIsResendingOtp(false);
+    }
   };
 
   const handleVerifyOtp = async (e: FormEvent) => {
@@ -96,10 +130,13 @@ export default function Login() {
     const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
 
     try {
+      setIsVerifyingOtp(true);
       await verifyOtp(formattedIdentifier, otp, type);
       navigate('/profile');
     } catch (error) {
       setOtp('');
+    } finally {
+      setIsVerifyingOtp(false);
     }
   };
 
@@ -137,7 +174,7 @@ export default function Login() {
                   <form onSubmit={handleSendOtp} className="space-y-5">
                     <div className="space-y-2">
                       <label className="text-sm font-semibold text-foreground/80 ml-1">I am a</label>
-                      <Tabs value={role} onValueChange={(v) => setRole(v as any)} className="w-full">
+                      <Tabs value={role} onValueChange={(v) => setRole(v as 'tenant' | 'owner')} className="w-full">
                         <TabsList className="grid w-full grid-cols-2 h-11 p-1 bg-secondary/30 rounded-xl">
                           <TabsTrigger value="tenant" className="rounded-lg text-xs">Tenant / Buyer</TabsTrigger>
                           <TabsTrigger value="owner" className="rounded-lg text-xs">Owner / Seller</TabsTrigger>
@@ -180,9 +217,9 @@ export default function Login() {
                       type="submit" 
                       size="lg" 
                       className="w-full h-12 text-base font-bold rounded-xl shadow-lg shadow-primary/10" 
-                      disabled={!identifier || isLoading}
+                      disabled={!identifier || isSendingOtp}
                     >
-                      {isLoading ? 'Sending...' : 'Send OTP'}
+                      {isSendingOtp ? 'Sending...' : 'Send OTP'}
                     </Button>
                   </form>
                 </motion.div>
@@ -200,7 +237,7 @@ export default function Login() {
                         maxLength={8}
                         value={otp}
                         onChange={(value) => setOtp(value)}
-                        disabled={isLoading}
+                        disabled={isVerifyingOtp}
                       >
                         <InputOTPGroup className="gap-1.5 sm:gap-2">
                           {[...Array(8)].map((_, i) => (
@@ -224,9 +261,9 @@ export default function Login() {
                     onClick={handleVerifyOtp}
                     size="lg" 
                     className="w-full h-14 text-lg font-bold rounded-2xl shadow-xl shadow-primary/20 transition-all active:scale-[0.98]" 
-                    disabled={otp.length !== 8 || isLoading}
+                    disabled={otp.length !== 8 || isVerifyingOtp}
                   >
-                    {isLoading ? (
+                    {isVerifyingOtp ? (
                       <span className="flex items-center gap-2">
                         <Clock className="w-5 h-5 animate-spin" /> Verifying...
                       </span>
@@ -238,7 +275,7 @@ export default function Login() {
                       Didn't receive the code?{' '}
                       <button 
                         onClick={handleResendOtp}
-                        disabled={timer > 0 || isLoading}
+                        disabled={timer > 0 || isResendingOtp || isVerifyingOtp}
                         className={cn(
                           "font-bold text-primary hover:underline disabled:opacity-50 disabled:no-underline",
                           timer > 0 && "cursor-not-allowed"

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Loader2, Plus, MessageSquareWarning } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
+import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export function ComplaintSystem({ societyId, isAdmin }: { societyId: string, isAdmin: boolean }) {
   const { user } = useAuth();
@@ -55,7 +56,8 @@ export function ComplaintSystem({ societyId, isAdmin }: { societyId: string, isA
       refetch();
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to raise complaint');
+      logError(error, { action: 'complaint.create' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'complaint.create' }) || 'Failed to raise complaint');
     },
   });
 
@@ -72,7 +74,8 @@ export function ComplaintSystem({ societyId, isAdmin }: { societyId: string, isA
       refetch();
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update status');
+      logError(error, { action: 'complaint.updateStatus' });
+      toast.error(getUserFriendlyErrorMessage(error, { action: 'complaint.updateStatus' }) || 'Failed to update status');
     },
   });
 
