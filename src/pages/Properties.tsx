@@ -27,6 +27,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { LocationAccessBanner } from '@/components/location/LocationAccessBanner';
 import type { Property, PropertyFilters, ListingType, PropertyType, FurnishingType } from '@/types/property';
 
 const propertyTypes: { value: PropertyType; label: string }[] = [
@@ -107,9 +108,18 @@ export default function Properties() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([12.9716, 77.5946]); // Default Bangalore
   const [mapBounds, setMapBounds] = useState<{ ne: [number, number]; sw: [number, number] } | null>(null);
   const [radiusKm, setRadiusKm] = useState<number>(10);
-  const { coords: userCoords, loading: locationLoading, error: locationError } = useGeolocation();
+  const {
+    coords: userCoords,
+    loading: locationLoading,
+    error: locationError,
+    errorType: locationErrorType,
+    permission: locationPermission,
+    requestLocation,
+    fromCache: locationFromCache,
+  } = useGeolocation({ autoRequest: false });
   const { user } = useAuth();
   const { toast } = useToast();
+  const hasCenteredOnUser = useRef(false);
 
   // Filters state
   const [filters, setFilters] = useState<PropertyFilters>({
@@ -152,6 +162,13 @@ export default function Properties() {
       setSearchQuery('');
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!userCoords) return;
+    if (hasCenteredOnUser.current) return;
+    setMapCenter([userCoords.latitude, userCoords.longitude]);
+    hasCenteredOnUser.current = true;
+  }, [userCoords, locationFromCache]);
 
   const [sortBy, setSortBy] = useState('relevance');
   const observerTarget = useRef<HTMLDivElement>(null);
@@ -368,6 +385,16 @@ export default function Properties() {
 
       <main className="py-6">
         <div className="container mx-auto px-4">
+          <div className="mb-4 sm:mb-6">
+            <LocationAccessBanner
+              loading={locationLoading}
+              coords={userCoords}
+              error={locationError}
+              errorType={locationErrorType}
+              permission={locationPermission}
+              onRequest={requestLocation}
+            />
+          </div>
           {/* Search Bar */}
           <div className="bg-card rounded-xl border border-border p-3 sm:p-4 mb-4 sm:mb-6 relative z-20">
             <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
@@ -520,6 +547,13 @@ export default function Properties() {
                     </div>
                   )}
                 </div>
+
+                {!userCoords && !locationLoading && (
+                  <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={requestLocation}>
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Use my location
+                  </Button>
+                )}
 
                 <select
                   value={sortBy}

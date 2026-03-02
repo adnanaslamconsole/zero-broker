@@ -34,6 +34,7 @@ import { ScrollToTop } from "./components/layout/ScrollToTop";
 import { ScrollToTopOnNavigate } from "./components/layout/ScrollToTopOnNavigate";
 import { queryClient } from "@/lib/queryClient";
 import { AuthLoadingOverlay } from "@/components/auth/AuthLoadingOverlay";
+import { MobileLocationBootstrap } from "@/components/location/MobileLocationBootstrap";
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -45,6 +46,7 @@ const App = () => (
           <ScrollToTopOnNavigate />
           <div className="flex flex-col min-h-screen pb-16 lg:pb-0">
             <AuthLoadingOverlay />
+            <MobileLocationBootstrap />
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/properties" element={<Properties />} />

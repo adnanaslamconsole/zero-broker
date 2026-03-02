@@ -1,24 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { MapPin, Search, Loader2, X, Navigation } from 'lucide-react';
+import { Building2, MapPin, Navigation, Search, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { appFetch } from '@/lib/requestAbort';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { searchLocations, type LocationResult, type LocationSearchMeta } from '@/lib/locationSearchService';
 
-interface LocationResult {
-  place_id: number;
-  lat: string;
-  lon: string;
-  display_name: string;
-  address?: {
-    city?: string;
-    suburb?: string;
-    neighbourhood?: string;
-    road?: string;
-    state?: string;
-  };
-  type?: string;
-}
+let activeDropdownCloser: (() => void) | null = null;
 
 interface LocationSearchProps {
   value: string;
@@ -30,83 +18,128 @@ interface LocationSearchProps {
 
 export function LocationSearch({ value, onChange, onLocationSelect, className, placeholder }: LocationSearchProps) {
   const [suggestions, setSuggestions] = useState<LocationResult[]>([]);
+  const [meta, setMeta] = useState<LocationSearchMeta>({ strategy: 'none', queryUsed: '' });
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // Debounce logic
-  const [debouncedValue, setDebouncedValue] = useState(value);
+  // We debounce input changes to avoid firing a network request on every keystroke.
+  // 350ms stays within the requested 300–500ms range while still feeling responsive.
+  const debouncedValue = useDebouncedValue(value, 350);
+
+  const closeDropdown = useCallback(() => {
+    setIsOpen(false);
+    if (activeDropdownCloser === closeDropdown) activeDropdownCloser = null;
+  }, []);
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, 400);
-    return () => clearTimeout(handler);
+    setHasSearched(false);
   }, [value]);
 
   useEffect(() => {
+    // Cancel any in-flight request when a new debounced query arrives.
+    // This prevents duplicate/overlapping calls and ensures the UI only shows results for the latest query.
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    const normalized = debouncedValue.trim();
+    if (!normalized || normalized.length < 3) {
+      setIsLoading(false);
+      setErrorMessage(null);
+      setSuggestions([]);
+      setMeta({ strategy: 'none', queryUsed: normalized });
+      setHasSearched(false);
+      closeDropdown();
+      return;
+    }
+
     const controller = new AbortController();
-    const fetchSuggestions = async () => {
-      if (!debouncedValue || debouncedValue.length < 3) {
+    abortRef.current = controller;
+
+    setHasSearched(true);
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    searchLocations(normalized, controller.signal)
+      .then(({ results, meta: nextMeta }) => {
+        setSuggestions(results);
+        setMeta(nextMeta);
+      })
+      .catch((err) => {
+        if ((err as Error)?.name === 'AbortError') return;
         setSuggestions([]);
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const res = await appFetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            debouncedValue
-          )}&limit=8&addressdetails=1&countrycodes=in`
-          ,
-          { signal: controller.signal }
-        );
-        const data = await res.json();
-        setSuggestions(data);
-        setIsOpen(true);
-      } catch (error) {
-        if ((error as Error)?.name !== 'AbortError') {
-          console.error('Failed to fetch locations', error);
-        }
-      } finally {
+        setMeta({ strategy: 'none', queryUsed: normalized });
+        setErrorMessage('Could not search locations right now. Please try again.');
+      })
+      .finally(() => {
         setIsLoading(false);
-      }
-    };
+      });
 
-    fetchSuggestions();
     return () => controller.abort();
-  }, [debouncedValue]);
+  }, [closeDropdown, debouncedValue]);
 
-  // Close dropdown when clicking outside
+  // Ensure only one LocationSearch dropdown is open globally at a time.
+  // This prevents multiple instances (e.g. home hero + other overlays) from appearing to open "twice".
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    if (!isOpen) return;
+    if (activeDropdownCloser && activeDropdownCloser !== closeDropdown) activeDropdownCloser();
+    activeDropdownCloser = closeDropdown;
+    return () => {
+      if (activeDropdownCloser === closeDropdown) activeDropdownCloser = null;
+    };
+  }, [closeDropdown, isOpen]);
+
+  // Close dropdown when clicking outside / pressing Escape.
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+        closeDropdown();
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeDropdown();
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeDropdown]);
 
   const handleSelect = (item: LocationResult) => {
-    // Smart formatting
-    const parts = item.display_name.split(', ');
-    const mainName = parts[0];
-    const subText = parts.slice(1, 3).join(', '); // Show next 2 parts (e.g. City, State)
+    // Use a more descriptive query value so downstream property search can match better.
+    // Example: "Ghanta Ghar, Kanpur, Uttar Pradesh" instead of only "Ghanta Ghar".
+    const parts = item.display_name.split(', ').filter(Boolean);
+    const mainName = parts[0] ?? item.display_name;
+    const context = parts.slice(1, 3).join(', ');
+    const inputValue = context ? `${mainName}, ${context}` : mainName;
     
-    onChange(mainName);
+    onChange(inputValue);
     onLocationSelect({
       lat: parseFloat(item.lat),
       lon: parseFloat(item.lon),
       name: mainName,
     });
-    setIsOpen(false);
+    closeDropdown();
   };
 
   const getIcon = (type?: string) => {
     if (type === 'city') return <Building2 className="w-4 h-4 text-primary" />;
     return <MapPin className="w-4 h-4 text-muted-foreground" />;
   };
+
+  const showPanel = useMemo(() => {
+    if (!isOpen) return false;
+    if (isLoading) return true;
+    if (errorMessage) return true;
+    if (suggestions.length > 0) return true;
+    if (hasSearched && value.trim().length >= 3) return true;
+    return false;
+  }, [errorMessage, hasSearched, isLoading, isOpen, suggestions.length, value]);
 
   return (
     <div className={cn("relative group", className)} ref={containerRef}>
@@ -120,9 +153,9 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
           value={value}
           onChange={(e) => {
             onChange(e.target.value);
-            setIsOpen(true);
           }}
-          className="pl-12 h-14 bg-background border-border/50 shadow-sm hover:border-primary/50 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-base rounded-xl"
+          onFocus={() => setIsOpen(true)}
+          className="pl-12 pr-12 h-14 bg-background border-border/50 shadow-sm hover:border-primary/50 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-base rounded-xl"
         />
         {isLoading ? (
           <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -133,7 +166,9 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
             onClick={() => {
               onChange('');
               setSuggestions([]);
-              setIsOpen(false);
+              setMeta({ strategy: 'none', queryUsed: '' });
+              setErrorMessage(null);
+              closeDropdown();
             }}
             className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-secondary rounded-full text-muted-foreground hover:text-foreground transition-colors"
           >
@@ -143,7 +178,7 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
       </div>
 
       <AnimatePresence>
-        {isOpen && suggestions.length > 0 && (
+        {showPanel && (
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -156,36 +191,51 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
                 <span>Suggested Locations</span>
                 <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]">INDIA</span>
               </div>
-              <ul className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                {suggestions.map((item) => {
-                  const parts = item.display_name.split(', ');
-                  const mainName = parts[0];
-                  const secondaryName = parts.slice(1).join(', ');
+              {meta.strategy === 'fallback_city' && (
+                <div className="px-4 pb-2 text-xs text-muted-foreground">
+                  No exact match. Showing results for {meta.fallbackCityQuery}.
+                </div>
+              )}
 
-                  return (
-                    <li
-                      key={item.place_id}
-                      className="px-4 py-3 hover:bg-primary/5 cursor-pointer flex items-start gap-3 transition-colors group/item border-b border-border/50 last:border-0"
-                      onClick={() => handleSelect(item)}
-                    >
-                      <div className="mt-1 p-2 bg-secondary rounded-full group-hover/item:bg-primary/10 transition-colors">
-                        <MapPin className="w-4 h-4 text-muted-foreground group-hover/item:text-primary transition-colors" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-foreground truncate group-hover/item:text-primary transition-colors">
-                          {mainName}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {secondaryName}
-                        </p>
-                      </div>
-                      <div className="mt-2 opacity-0 group-hover/item:opacity-100 transition-opacity -translate-x-2 group-hover/item:translate-x-0 duration-300">
-                        <Navigation className="w-3 h-3 text-primary -rotate-45" />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              {errorMessage ? (
+                <div className="px-4 py-3 text-sm text-destructive">{errorMessage}</div>
+              ) : isLoading ? (
+                <div className="px-4 py-3 text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Searching…
+                </div>
+              ) : suggestions.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-muted-foreground">No results found.</div>
+              ) : (
+                <ul className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                  {suggestions.map((item) => {
+                    const parts = item.display_name.split(', ').filter(Boolean);
+                    const mainName = parts[0] ?? item.display_name;
+                    const secondaryName = parts.slice(1).join(', ');
+
+                    return (
+                      <li
+                        key={item.place_id}
+                        className="px-4 py-3 hover:bg-primary/5 cursor-pointer flex items-start gap-3 transition-colors group/item border-b border-border/50 last:border-0"
+                        onClick={() => handleSelect(item)}
+                      >
+                        <div className="mt-1 p-2 bg-secondary rounded-full group-hover/item:bg-primary/10 transition-colors">
+                          {getIcon(item.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground truncate group-hover/item:text-primary transition-colors">
+                            {mainName}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">{secondaryName}</p>
+                        </div>
+                        <div className="mt-2 opacity-0 group-hover/item:opacity-100 transition-opacity -translate-x-2 group-hover/item:translate-x-0 duration-300">
+                          <Navigation className="w-3 h-3 text-primary -rotate-45" />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
             <div className="bg-muted/30 px-4 py-2 text-[10px] text-muted-foreground border-t flex items-center justify-between">
               <span className="flex items-center gap-1">
@@ -199,6 +249,3 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
     </div>
   );
 }
-
-// Helper component import
-import { Building2 } from 'lucide-react';
