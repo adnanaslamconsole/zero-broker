@@ -11,7 +11,7 @@ export interface NotificationItem {
   id: string;
   userId: string;
   title: string;
-  body: string;
+  message: string;
   type:
     | 'new-match'
     | 'price-drop'

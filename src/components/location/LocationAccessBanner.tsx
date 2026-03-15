@@ -19,12 +19,14 @@ export function LocationAccessBanner({ loading, coords, error, errorType, permis
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-          <div className="text-sm font-medium">Detecting your location…</div>
+      <div className="rounded-3xl border border-primary/20 bg-primary/5 px-6 py-5 flex items-center justify-between gap-4 animate-pulse">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+          <div className="text-base font-bold tracking-tight text-primary">Pinpointing your location...</div>
         </div>
-        <div className="text-xs text-muted-foreground">Nearby properties will load automatically.</div>
+        <div className="text-xs font-black uppercase tracking-widest text-primary/60 hidden sm:block">Searching Nearby</div>
       </div>
     );
   }
@@ -41,49 +43,48 @@ export function LocationAccessBanner({ loading, coords, error, errorType, permis
       : 'Unable to detect location';
 
   const description = isDenied
-    ? 'Enable location access to see nearby properties. You can still search manually by city/locality.'
+    ? 'Enable location access to discover premium properties in your immediate vicinity.'
     : isUnavailable
-      ? 'Turn on device location services and try again. You can still search manually by city/locality.'
-      : 'Try again, or continue with manual search by city/locality.';
-
-  const steps =
-    platform === 'ios'
-      ? 'iOS: Settings → Safari → Location → Allow (or Ask). Also check Settings → Privacy & Security → Location Services.'
-      : platform === 'android'
-        ? 'Android: Chrome → Settings → Site settings → Location → Allow. Also enable Location in device settings.'
-        : 'Browser: Allow location for this site in your browser settings, and enable device location services.';
+      ? 'Please enable device location services for the most accurate property matches.'
+      : 'Continue with manual search or try to re-detect your location.';
 
   return (
     <div
       className={cn(
-        'rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3',
-        isDenied ? 'border-destructive/30 bg-destructive/5' : 'border-border bg-card'
+        'rounded-[2rem] border-2 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 transition-all duration-500',
+        isDenied 
+          ? 'border-destructive/20 bg-destructive/5' 
+          : 'border-primary/20 bg-primary/5 shadow-lg shadow-primary/5'
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-5">
         <div
           className={cn(
-            'mt-0.5 w-9 h-9 rounded-lg flex items-center justify-center',
-            isDenied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'
+            'w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-inner',
+            isDenied ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
           )}
         >
-          {isDenied ? <TriangleAlert className="w-5 h-5" /> : <MapPin className="w-5 h-5" />}
+          {isDenied ? <TriangleAlert className="w-7 h-7" /> : <MapPin className="w-7 h-7" />}
         </div>
         <div>
-          <div className="text-sm font-semibold">{title}</div>
-          <div className="text-sm text-muted-foreground mt-0.5">{description}</div>
-          <div className="text-xs text-muted-foreground mt-2">{steps}</div>
+          <div className="text-lg font-black tracking-tight">{title}</div>
+          <p className="text-sm text-muted-foreground mt-1 font-medium max-w-md">{description}</p>
+          <div className="inline-flex mt-4 items-center gap-2 px-3 py-1 rounded-full bg-background/50 border border-border/50 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+            {platform.toUpperCase()} Optimized
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 justify-end">
+      <div className="flex items-center gap-3">
         <Button
           variant={isDenied ? 'destructive' : 'default'}
-          size="sm"
+          size="lg"
           onClick={onRequest}
           disabled={permission === 'denied'}
+          className="rounded-2xl px-8 font-black uppercase text-xs tracking-widest h-14"
         >
-          Enable location
+          {isDenied ? 'Permissions Needed' : 'Enable Location'}
         </Button>
       </div>
     </div>

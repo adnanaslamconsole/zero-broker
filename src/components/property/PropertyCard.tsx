@@ -16,6 +16,7 @@ import {
   MessageCircle,
   TrendingUp,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { Property } from '@/types/property';
 import { Badge } from '@/components/ui/badge';
@@ -25,14 +26,16 @@ import { useShortlist } from '@/hooks/useShortlist';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { BookingDialog } from './BookingDialog';
+import { PropertyShare } from './PropertyShare';
 
 interface PropertyCardProps {
   property: Property;
   variant?: 'default' | 'horizontal';
   radiusKm?: number;
+  onDelete?: (id: string, e: React.MouseEvent) => void;
 }
 
-export function PropertyCard({ property, variant = 'default', radiusKm }: PropertyCardProps) {
+export function PropertyCard({ property, variant = 'default', radiusKm, onDelete }: PropertyCardProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imgError, setImgError] = useState(false);
   const { user } = useAuth();
@@ -80,7 +83,7 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-card rounded-2xl border border-border overflow-hidden property-card group transition-all hover:shadow-xl hover:-translate-y-1"
+        className="bg-card rounded-2xl border border-border/50 overflow-hidden property-card group transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1.5 relative"
       >
         <Link to={`/property/${property.id}`} className="flex flex-col sm:flex-row h-full">
           {/* Image Section */}
@@ -130,6 +133,15 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
                   {property.distanceKm.toFixed(1)} km
                 </Badge>
               )}
+              {property.bountyReward && property.bountyVerificationStatus === 'pending' && (
+                <Badge variant="outline" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1 bg-amber-50 text-amber-600 border-amber-200 font-black animate-pulse">
+                  <TrendingUp className="w-3 h-3" />
+                  ₹{property.bountyReward} Bounty
+                </Badge>
+              )}
+              <Badge variant="outline" className="gap-1 text-[8px] sm:text-[10px] px-2 py-0.5 bg-secondary/50 text-muted-foreground border-border/50 font-bold">
+                AI-Checked Content
+              </Badge>
             </div>
 
             {/* Like Button */}
@@ -153,6 +165,26 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
               />
             </button>
 
+            <PropertyShare 
+              propertyId={property.id} 
+              title={property.title} 
+              className="absolute top-2 right-12 sm:top-3 sm:right-14 w-8 h-8 sm:w-10 sm:h-10 bg-white/90 backdrop-blur-sm border-none shadow-md"
+            />
+ 
+            {/* Delete Button (Owner Only) */}
+            {onDelete && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete(property.id, e);
+                }}
+                className="absolute top-2 right-22 sm:top-3 sm:right-24 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-destructive/10 backdrop-blur-sm flex items-center justify-center hover:bg-destructive hover:text-white text-destructive transition-all shadow-md active:scale-90"
+              >
+                <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+ 
             {/* Image Navigation - Hidden on mobile for cleaner look, use dots instead */}
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm">
               {property.images.slice(0, 5).map((_, index) => (
@@ -175,10 +207,10 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
                   {property.listingType === 'rent' ? 'For Rent' : 'For Sale'}
                 </Badge>
                 <div className="text-right">
-                  <div className="text-lg sm:text-xl font-display font-bold text-primary">
+                  <div className="text-xl sm:text-2xl font-display font-black text-primary drop-shadow-sm">
                     {formatPrice(property.price)}
                     {property.listingType === 'rent' && (
-                      <span className="text-xs sm:text-sm font-normal text-muted-foreground">/mo</span>
+                      <span className="text-xs sm:text-sm font-medium text-muted-foreground ml-1">/mo</span>
                     )}
                   </div>
                 </div>
@@ -251,7 +283,7 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-card rounded-2xl border border-border overflow-hidden property-card group transition-all hover:shadow-xl hover:-translate-y-1 h-full flex flex-col"
+      className="bg-card rounded-2xl border border-border/50 overflow-hidden property-card group transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1.5 h-full flex flex-col relative"
     >
       <Link to={`/property/${property.id}`} className="flex flex-col h-full">
         {/* Image Section */}
@@ -301,6 +333,12 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
                 {property.distanceKm.toFixed(1)} km
               </Badge>
             )}
+            {property.bountyReward && property.bountyVerificationStatus === 'pending' && (
+              <Badge variant="outline" className="gap-1 text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1 bg-amber-50 text-amber-600 border-amber-200 font-black animate-pulse">
+                <TrendingUp className="w-3 h-3" />
+                ₹{property.bountyReward}
+              </Badge>
+            )}
           </div>
 
           {/* Like Button */}
@@ -324,6 +362,26 @@ export function PropertyCard({ property, variant = 'default', radiusKm }: Proper
             />
           </button>
 
+          <PropertyShare 
+            propertyId={property.id} 
+            title={property.title} 
+            className="absolute top-2 right-12 sm:top-3 sm:right-14 w-8 h-8 sm:w-10 sm:h-10 bg-white/90 backdrop-blur-sm border-none shadow-md"
+          />
+ 
+          {/* Delete Button (Owner Only) */}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(property.id, e);
+              }}
+              className="absolute top-2 right-22 sm:top-3 sm:right-24 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-destructive/10 backdrop-blur-sm flex items-center justify-center hover:bg-destructive hover:text-white text-destructive transition-all shadow-md active:scale-90"
+            >
+              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+          )}
+ 
           {/* Image Navigation dots */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm">
             {property.images.slice(0, 5).map((_, index) => (

@@ -1,12 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { UserAccountSnapshot, UserProfile } from '@/types/user';
+import type { UserAccountSnapshot, UserProfile, VerificationStatus } from '@/types/user';
 import { toast } from 'sonner';
 import { offlineStorage } from '@/lib/offlineStorage';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 import { assertEmailNotDisposable, isValidEmail } from '@/lib/disposableEmailGuard';
 import { abortAllRequests } from '@/lib/requestAbort';
 import { queryClient } from '@/lib/queryClient';
+import { VERSION_KEY, clearAllAppData } from '@/lib/cacheSync';
 
 interface AuthContextValue {
   user: UserAccountSnapshot | null;
@@ -19,6 +20,7 @@ interface AuthContextValue {
   signUp: (email: string, password: string, name: string, role?: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   updateProfile: (payload: { name: string; mobile?: string | null }) => Promise<void>;
+  updateKycStatus: (status: VerificationStatus) => void;
   uploadAvatar: (file: File) => Promise<string>;
   logout: () => Promise<void>;
   // MFA methods
@@ -101,6 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session?.user) {
+          // Clear cache on login to prevent stale data from anonymous/previous session
+          if (event === 'SIGNED_IN') {
+            queryClient.clear();
+          }
           const fetchId = Math.random().toString(36).substring(7);
           fetchIdRef.current = fetchId;
           await fetchProfile(session.user.id, fetchId);
@@ -634,32 +640,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       try {
-        offlineStorage.clearDraft();
-      } catch {
-        // ignore
-      }
-
-      try {
+        localStorage.clear();
         sessionStorage.clear();
-      } catch {
-        // ignore
-      }
-
-      try {
-        localStorage.removeItem('zerobroker-demo-session');
-        localStorage.removeItem('demo_user_meta');
-        localStorage.removeItem('zerobroker-auth-session');
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (!key) continue;
-          if (key.includes('supabase.auth.token') || key.startsWith('sb-') || key.includes('zerobroker')) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach((key) => localStorage.removeItem(key));
-      } catch {
-        // ignore
+        console.log('[Auth] localStorage and sessionStorage cleared successfully.');
+      } catch (e) {
+        console.warn('Full storage cleanup failed during logout', e);
       }
 
       queryClient.clear();
@@ -697,6 +682,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          signUp,
          updatePassword,
         updateProfile,
+        updateKycStatus: (status) => patchLocalProfile({ kycStatus: status }),
         uploadAvatar,
         logout,
         enrollMfa,

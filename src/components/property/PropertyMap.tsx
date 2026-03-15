@@ -8,8 +8,9 @@ import L from 'leaflet';
 import { Property } from '@/types/property';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Home, MapPin, Navigation } from 'lucide-react';
+import { ArrowRight, Home, MapPin, Navigation, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 // Fix for default marker icon
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -25,7 +26,7 @@ const DefaultIcon = L.icon({
 });
 
 // Custom icon for properties
-const createCustomIcon = (price: number, type: string) => {
+const createCustomIcon = (price: number, listingType: string) => {
   const formattedPrice = price >= 10000000 
     ? `${(price / 10000000).toFixed(1)}Cr` 
     : price >= 100000 
@@ -35,12 +36,12 @@ const createCustomIcon = (price: number, type: string) => {
   return L.divIcon({
     className: 'custom-property-marker',
     html: `
-      <div class="flex items-center justify-center bg-primary text-primary-foreground px-2 py-1 rounded-full shadow-lg border-2 border-background font-bold text-xs whitespace-nowrap hover:scale-110 transition-transform">
-        ${type === 'rent' ? '₹' : ''}${formattedPrice}
+      <div class="flex items-center justify-center bg-primary text-primary-foreground px-2 py-1 rounded-full shadow-lg border-2 border-background font-black text-[10px] whitespace-nowrap hover:scale-110 transition-transform">
+        ${listingType === 'rent' ? '₹' : ''}${formattedPrice}
       </div>
     `,
-    iconSize: [40, 24],
-    iconAnchor: [20, 12],
+    iconSize: [46, 28],
+    iconAnchor: [23, 14],
   });
 };
 
@@ -117,54 +118,81 @@ export function PropertyMap({
                 <Marker 
                   key={property.id} 
                   position={[property.latitude, property.longitude]}
-                  icon={createCustomIcon(property.price, property.type)}
+                  icon={createCustomIcon(property.price, property.listingType)}
                 >
-                  <Popup className="property-map-popup min-w-[280px]">
-                    <div className="p-0 overflow-hidden rounded-lg">
-                      <div className="aspect-[16/10] relative">
+                  <Popup className="property-map-popup">
+                    <div className="w-[300px] bg-background rounded-[1.5rem] overflow-hidden shadow-2xl border border-border/50 group/popup">
+                      {/* Hero Image Section */}
+                      <div className="relative aspect-[4/3]">
                         <img 
                           src={property.images[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80'} 
                           alt={property.title}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover/popup:scale-110"
                         />
-                        <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          <Badge variant={property.type === 'rent' ? 'secondary' : 'default'} className="w-fit shadow-md uppercase text-[10px]">
-                            For {property.type}
+                        
+                        {/* Floating Badge */}
+                        <div className="absolute top-4 left-4">
+                          <Badge className={cn(
+                            "px-4 py-1.5 rounded-full font-black uppercase tracking-widest text-[10px] border-none shadow-lg backdrop-blur-md",
+                            property.listingType === 'rent' 
+                              ? "bg-[#e2f0ff] text-[#0066cc]" 
+                              : "bg-[#fff0e2] text-[#cc6600]"
+                          )}>
+                            FOR {property.listingType}
                           </Badge>
-                          {property.distanceKm !== undefined && (
-                            <Badge variant="outline" className="w-fit bg-background/80 backdrop-blur-sm shadow-md text-[10px] gap-1">
-                              <Navigation className="w-2.5 h-2.5" />
-                              {property.distanceKm.toFixed(1)} km
-                            </Badge>
-                          )}
                         </div>
-                        <div className="absolute bottom-2 right-2 bg-primary text-primary-foreground px-2 py-1 rounded font-bold text-sm shadow-lg">
-                          ₹{property.price.toLocaleString('en-IN')}
+
+                        {/* Price Tag */}
+                        <div className="absolute bottom-4 right-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                          <div className="bg-[#ff4d1c] text-white px-5 py-2.5 rounded-[1rem] shadow-xl shadow-orange-500/30 flex items-center justify-center font-display">
+                            <span className="text-xl font-black">₹{property.price.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+
+                        {/* Close button hint (just for aesthetics in the screenshot) */}
+                        <div className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white/80 pointer-events-none">
+                          <X className="w-4 h-4" />
                         </div>
                       </div>
                       
-                      <div className="p-3">
-                        <h3 className="font-bold text-sm line-clamp-1 mb-1">{property.title}</h3>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-                          <MapPin className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{property.locality}, {property.city}</span>
+                      {/* Content Section */}
+                      <div className="p-5">
+                        <h3 className="text-xl font-black text-foreground leading-tight mb-2 tracking-tight group-hover/popup:text-primary transition-colors">
+                          {property.title}
+                        </h3>
+                        
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground/80 mb-6">
+                          <MapPin className="w-4 h-4 shrink-0 text-primary/60" />
+                          <span className="truncate font-medium">{property.locality}, {property.city}</span>
                         </div>
                         
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-3 text-xs font-medium">
-                            <div className="flex items-center gap-1">
-                              <Home className="w-3.5 h-3.5 text-primary" />
-                              <span>{property.bedrooms} BHK</span>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-5">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <Home className="w-5 h-5 text-primary" />
+                                <span className="text-lg font-black">{property.bhk}</span>
+                              </div>
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 ml-7 -mt-1">BHK</span>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-muted-foreground">|</span>
-                              <span>{property.area} sqft</span>
+                            
+                            <div className="w-px h-8 bg-border/60" />
+                            
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg font-black">{property.carpetArea}</span>
+                              </div>
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 -mt-1">sqft</span>
                             </div>
                           </div>
                           
-                          <Button size="sm" className="h-8 px-3 text-xs gap-1" asChild>
+                          <Button 
+                            className="h-14 px-8 bg-[#ff4d1c] hover:bg-[#e64619] text-white rounded-[1.25rem] font-black uppercase tracking-widest text-xs gap-3 shadow-xl shadow-orange-500/20 active:scale-95 transition-all group/btn" 
+                            asChild
+                          >
                             <Link to={`/property/${property.id}`}>
-                              View <ArrowRight className="w-3 h-3" />
+                              VIEW DETAILS
+                              <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
                             </Link>
                           </Button>
                         </div>
@@ -186,7 +214,7 @@ export function PropertyMap({
         }
         .leaflet-popup-content {
           margin: 0;
-          width: 280px !important;
+          width: 300px !important;
         }
         .custom-property-marker {
           background: transparent !important;

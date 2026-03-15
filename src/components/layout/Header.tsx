@@ -13,6 +13,9 @@ import {
   HelpCircle,
   ShieldCheck,
   Heart,
+  Menu,
+  X,
+  LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -68,9 +71,10 @@ const navLinks = [
 
 export function Header() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const isAdmin = user?.profile?.roles?.includes('platform-admin');
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Fetch unread notifications count
   const { data: unreadCount = 0 } = useQuery({
@@ -198,10 +202,10 @@ export function Header() {
 
             <Button 
               variant="outline" 
-              className="gap-2 h-11 px-5 rounded-xl border-primary/20 hover:border-primary/50 hover:bg-primary/5 font-bold transition-all duration-300"
+              className="gap-2 h-11 px-5 rounded-xl border-primary/20 hover:border-primary hover:bg-primary hover:text-white font-bold transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-primary/30"
               onClick={() => navigate('/post-property')}
             >
-              <Plus className="w-4.5 h-4.5 text-primary" />
+              <Plus className="w-4.5 h-4.5 text-primary group-hover:text-white transition-colors" />
               Post Property
             </Button>
 
@@ -222,38 +226,18 @@ export function Header() {
               <Button
                 variant="outline"
                 size="icon"
-                className="relative touch-friendly shrink-0 h-9 w-9"
+                className="relative touch-friendly shrink-0 h-9 w-9 bg-background/50 backdrop-blur-sm border-border/50"
                 onClick={() => navigate('/admin')}
                 aria-label="Admin dashboard"
               >
-                <ShieldCheck className="w-5 h-5" />
+                <ShieldCheck className="w-5 h-5 text-primary" />
               </Button>
             ) : null}
-            {user ? (
-              <Button
-                variant="default"
-                size="sm"
-                className="h-8 px-2 sm:px-3 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5"
-                onClick={() => navigate('/profile')}
-              >
-                <span className="max-w-[70px] sm:max-w-[100px] truncate">
-                  {user.profile.name}
-                </span>
-              </Button>
-            ) : (
-              <Button
-                variant="default"
-                size="sm"
-                className="h-8 px-3 text-[10px] font-bold uppercase tracking-wider shadow-sm"
-                onClick={() => navigate('/login')}
-              >
-                Login
-              </Button>
-            )}
+            
             <Button
               variant="ghost"
               size="icon"
-              className="relative touch-friendly shrink-0 h-9 w-9"
+              className="relative touch-friendly shrink-0 h-9 w-9 bg-background/50 backdrop-blur-sm border-border/50"
               onClick={() => navigate('/notifications')}
             >
               <Bell className="w-5 h-5" />
@@ -263,9 +247,150 @@ export function Header() {
                 </span>
               ) : null}
             </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden touch-friendly shrink-0 h-9 w-9 bg-background/50 backdrop-blur-sm border-border/50"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </Button>
           </div>
         </div>
       </div>
+
+      {/* Mobile Menu Overlay */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[51] lg:hidden"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed right-0 top-0 bottom-0 w-[85%] max-w-sm bg-card z-[52] lg:hidden flex flex-col shadow-2xl"
+            >
+              <div className="p-6 flex items-center justify-between border-b border-border/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
+                    <Home className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="font-display font-black text-xl">Menu</span>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {user ? (
+                   <Link 
+                     to="/profile" 
+                     className="flex items-center gap-4 p-4 rounded-2xl bg-primary/5 border border-primary/10 mb-4"
+                     onClick={() => setIsMobileMenuOpen(false)}
+                   >
+                     <div className="w-12 h-12 rounded-full bg-primary text-white flex items-center justify-center text-lg font-black uppercase">
+                       {user.profile.name[0]}
+                     </div>
+                     <div className="flex-1 min-w-0">
+                       <h4 className="font-black text-foreground truncate">{user.profile.name}</h4>
+                       <p className="text-xs text-muted-foreground font-medium truncate">{user.profile.email}</p>
+                     </div>
+                   </Link>
+                ) : (
+                  <Button 
+                    className="w-full h-14 rounded-2xl font-black uppercase tracking-widest mb-4"
+                    onClick={() => {
+                      navigate('/login');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    Sign In
+                  </Button>
+                )}
+
+                <div className="space-y-1">
+                  {navLinks.map((link) => (
+                    <div key={link.label} className="space-y-1">
+                      <div className="flex items-center justify-between p-3 rounded-xl font-bold text-foreground/70">
+                        <div className="flex items-center gap-3">
+                          <link.icon className="w-5 h-5 opacity-60" />
+                          <span>{link.label}</span>
+                        </div>
+                      </div>
+                      {link.submenu ? (
+                        <div className="grid grid-cols-2 gap-2 pl-4 pb-2">
+                          {link.submenu.map((sub) => (
+                            <Link
+                              key={sub.label}
+                              to={sub.href}
+                              className="p-3 text-xs font-bold text-muted-foreground bg-secondary/30 rounded-xl hover:bg-primary/5 hover:text-primary transition-colors"
+                              onClick={() => setIsMobileMenuOpen(false)}
+                            >
+                              {sub.label}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-4 border-t border-border/50">
+                  <Button 
+                    variant="outline" 
+                    className="w-full h-12 rounded-xl mb-2 font-bold justify-start gap-3"
+                    onClick={() => {
+                      navigate('/post-property');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <Plus className="w-5 h-5 text-primary" />
+                    Post Property
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="w-full h-12 rounded-xl font-bold justify-start gap-3"
+                    onClick={() => {
+                      navigate('/notifications');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <Bell className="w-5 h-5" />
+                    Notifications
+                  </Button>
+                </div>
+              </div>
+
+              {user && (
+                <div className="p-4 border-t border-border/50">
+                  <Button 
+                    variant="ghost" 
+                    className="w-full h-12 rounded-xl font-bold justify-start gap-3 text-destructive hover:bg-destructive/10"
+                    onClick={async () => {
+                      await logout();
+                      navigate('/login');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <LogOut className="w-5 h-5" />
+                    Logout
+                  </Button>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

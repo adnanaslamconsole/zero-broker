@@ -1,0 +1,69 @@
+{
+    "info": {
+        "_postman_id": "otp-verification-api",
+        "name": "OTP Verification API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Send OTP",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"phoneNumber\": \"+1234567890\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:3000/api/otp/send",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "3000",
+                    "path": [
+                        "api",
+                        "otp",
+                        "send"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "Verify OTP",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"phoneNumber\": \"+1234567890\",\n    \"otp\": \"123456\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:3000/api/otp/verify",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "3000",
+                    "path": [
+                        "api",
+                        "otp",
+                        "verify"
+                    ]
+                }
+            },
+            "response": []
+        }
+    ]
+}

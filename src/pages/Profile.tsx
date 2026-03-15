@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 import { BookingOTPDialog } from '@/components/property/BookingOTPDialog';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -30,7 +30,7 @@ type BookingForOTP = {
 };
 
 export default function Profile() {
-  const { user, logout, updateProfile, uploadAvatar } = useAuth();
+  const { user, logout, updateProfile, uploadAvatar, updateKycStatus } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const defaultTab = searchParams.get('tab') || 'activity';
@@ -432,8 +432,7 @@ export default function Profile() {
     ));
   };
 
-  // Fetch Owner's Properties for Dashboard
-  const { data: ownerProperties, isLoading: ownerPropertiesLoading } = useQuery({
+  const { data: ownerProperties, isLoading: ownerPropertiesLoading, refetch: refetchOwnerProperties } = useQuery({
     queryKey: ['owner-properties', user?.profile?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -448,7 +447,28 @@ export default function Profile() {
     },
     enabled: !!user,
   });
-
+ 
+  const [propertyToDelete, setPropertyToDelete] = useState<string | null>(null);
+ 
+  const deletePropertyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ status: 'archived' })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Listing moved to archives');
+      setPropertyToDelete(null);
+      refetchOwnerProperties();
+    },
+    onError: (error: Error) => {
+      logError(error, { action: 'property.archive' });
+      toast.error('Failed to archive listing');
+    }
+  });
+ 
   const togglePropertyStatusMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
       const { error } = await supabase
@@ -459,6 +479,7 @@ export default function Profile() {
     },
     onSuccess: () => {
       toast.success('Property status updated');
+      refetchOwnerProperties();
     }
   });
 
@@ -620,14 +641,15 @@ export default function Profile() {
         
         if (docsError) throw docsError;
       }
+
+      // 4. Force a local profile update to show pending state immediately
+      updateKycStatus('pending');
     },
     onSuccess: () => {
       toast.success('KYC documents submitted for verification!');
       // Reset form and files
       setKycForm({ fullName: '', panNumber: '', aadhaarNumber: '' });
       setKycFiles({ selfie: null, propertyDoc: null, electricityBill: null });
-      // Invalidate queries to update UI
-      refetchBookings(); // Using this as a proxy to refresh profile data if needed, or ideally invalidate 'auth-user'
     },
     onError: (error: Error) => {
       logError(error, { action: 'profile.submitKyc' });
@@ -684,1033 +706,428 @@ export default function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-secondary/30 to-background">
+    <div className="min-h-screen bg-gradient-to-b from-secondary/30 to-background flex flex-col">
       <Header />
-      <main className="py-4 pb-28 sm:py-12 container mx-auto px-4 max-w-6xl overflow-x-hidden">
+      <main className="flex-1 py-4 pb-28 sm:py-12 container mx-auto px-4 max-w-6xl overflow-x-hidden">
         {/* Header Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 sm:mb-10">
           <div className="w-full">
-            <h1 className="text-xl xs:text-2xl sm:text-4xl font-display font-bold text-foreground">My Dashboard</h1>
-            <p className="text-muted-foreground mt-1 text-xs sm:text-base">Manage your profile, bookings, and preferences.</p>
+            <h1 className="text-xl xs:text-2xl sm:text-4xl font-display font-black text-foreground antialiased tracking-tight">My Dashboard</h1>
+            <p className="text-muted-foreground mt-1 text-xs sm:text-base font-medium">Manage your properties, bookings, and premium experience.</p>
           </div>
-          <Button variant="destructive" onClick={handleLogout} className="w-full sm:w-auto gap-2 shadow-sm hover:shadow-md transition-all min-h-[44px] text-xs sm:text-sm">
+          <Button variant="destructive" onClick={handleLogout} className="hidden sm:inline-flex w-full sm:w-auto gap-2 shadow-sm hover:shadow-lg transition-all min-h-[44px] text-xs sm:text-sm font-bold rounded-xl">
             <LogOut className="w-4 h-4" /> Logout
           </Button>
         </div>
         
         <div className="grid gap-8 md:grid-cols-12">
-          {/* Left Sidebar - Profile Card */}
+          {/* Left Sidebar - Profile Card (4 cols) */}
           <div className="md:col-span-4 space-y-6">
-            <div className="bg-card/50 backdrop-blur-xl border border-border/50 rounded-2xl p-3 sm:p-6 shadow-xl lg:sticky lg:top-24 overflow-hidden relative group">
-              {/* Decorative Background */}
+            <div className="bg-card/50 backdrop-blur-xl border border-border/50 rounded-2xl p-4 sm:p-6 shadow-xl lg:sticky lg:top-24 overflow-hidden relative transition-all duration-300 hover:border-primary/20">
               <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent -z-10" />
               
-              <div className="relative flex flex-col items-center text-center mb-6 mt-4">
-                <div className="relative mb-4">
-                  <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full border-4 border-background shadow-2xl overflow-hidden bg-secondary flex items-center justify-center relative group/avatar">
+              <div className="relative flex flex-row sm:flex-col items-center sm:text-center gap-4 sm:gap-0">
+                <div className="relative mb-0 sm:mb-4 group/avatar shrink-0">
+                  <div className="w-16 h-16 xs:w-20 xs:h-20 sm:w-28 sm:h-28 rounded-full border-4 border-background shadow-2xl overflow-hidden bg-secondary flex items-center justify-center transition-transform duration-500 group-hover/avatar:scale-105">
                     {avatarPreviewUrl ? (
                       <img src={avatarPreviewUrl} alt={user.profile.name} className="w-full h-full object-cover" />
                     ) : user.profile.avatarUrl ? (
                       <img src={user.profile.avatarUrl} alt={user.profile.name} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-3xl sm:text-4xl font-bold text-muted-foreground">
+                      <span className="text-xl sm:text-4xl font-black text-muted-foreground">
                         {user.profile.name?.[0]?.toUpperCase() || 'U'}
                       </span>
                     )}
-                    
-                    {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                      <Camera className="w-8 h-8 text-white" />
+                      <Camera className="w-5 h-5 sm:w-8 sm:h-8 text-white" />
                     </div>
                   </div>
-                  
-                  {/* Edit Button Badge */}
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-0 right-0 min-h-[44px] min-w-[44px] flex items-center justify-center group"
+                    className="absolute bottom-0 right-0 p-1.5 sm:p-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:scale-110 transition-transform disabled:opacity-50"
                     disabled={isUploading}
-                    aria-label="Edit avatar"
                   >
-                    <span className="p-2 bg-primary text-primary-foreground rounded-full shadow-lg group-hover:scale-110 transition-transform flex items-center justify-center">
-                      {isUploading ? <span className="w-4 h-4 block rounded-full border-2 border-current border-t-transparent animate-spin" /> : <Edit2 className="w-4 h-4" />}
-                    </span>
+                    {isUploading ? <div className="w-3 h-3 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />}
                   </button>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={handleFileChange}
-                  />
+                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
 
-                <h2 className="text-xl sm:text-2xl font-bold text-foreground break-words max-w-full px-2">{user.profile.name}</h2>
-                <p className="text-xs sm:text-sm text-muted-foreground mb-4 break-all max-w-full px-2">{user.profile.email}</p>
-                
-                <div className="flex flex-col gap-2 items-center w-full">
-                  <div className="flex flex-wrap gap-2 justify-center px-2">
-                    <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary uppercase text-[9px] sm:text-[10px] tracking-wider py-1 px-2 min-h-[24px]">
-                      {user.profile.roles?.[0] || 'Member'}
-                    </Badge>
-                    <Badge variant={user.profile.kycStatus === 'verified' ? 'verified' : 'secondary'} className="gap-1 py-1 px-2 text-[9px] sm:text-[10px] min-h-[24px]">
-                      {user.profile.kycStatus === 'verified' ? (
-                        <>
-                          <ShieldCheck className="w-3 h-3" /> Verified Owner
-                        </>
-                      ) : (
-                        <>
-                          <AlertCircle className="w-3 h-3" /> Unverified
-                        </>
-                      )}
-                    </Badge>
+                <div className="flex-1 text-left sm:text-center min-w-0">
+                  <h2 className="text-lg xs:text-xl sm:text-2xl font-black text-foreground mb-1 truncate">{user.profile.name}</h2>
+                  <div className="flex flex-col gap-2 items-start sm:items-center w-full mb-0 sm:mb-6">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary uppercase text-[8px] xs:text-[10px] tracking-tight font-black px-1.5 xs:px-2 py-0.5">
+                        {user.profile.roles?.[0] || 'Member'}
+                      </Badge>
+                      <Badge variant={user.profile.kycStatus === 'verified' ? 'verified' : 'secondary'} className="gap-1 font-extrabold text-[8px] xs:text-[10px] tracking-tight px-1.5 xs:px-2">
+                        {user.profile.kycStatus === 'verified' ? <ShieldCheck className="w-2.5 h-2.5 xs:w-3 xs:h-3" /> : <AlertCircle className="w-2.5 h-2.5 xs:w-3 xs:h-3" />}
+                        {user.profile.kycStatus === 'verified' ? 'Verified Owner' : 'Identity Unverified'}
+                      </Badge>
+                    </div>
                   </div>
-                  <Badge variant="outline" className={cn("gap-1 font-bold py-1 px-2 text-[9px] sm:text-[10px] min-h-[24px]", getTrustScoreColor(user.profile.trustScore))}>
-                    <TrendingUp className="w-3 h-3" />
-                    {user.profile.trustScore} {getTrustScoreLabel(user.profile.trustScore)}
-                  </Badge>
-                  {user.profile.kycStatus !== 'verified' && (
-                    <Button variant="link" size="sm" className="h-auto min-h-[44px] p-2 text-primary font-bold text-[11px] sm:text-xs text-center px-4" onClick={() => handleTabChange('verification')}>
-                      Complete KYC to list properties →
-                    </Button>
-                  )}
                 </div>
               </div>
               
-              <div className="space-y-3 pt-6 border-t border-border/50">
-                <div className="flex items-center gap-3 text-sm p-2 sm:p-3 rounded-lg hover:bg-secondary/50 transition-colors min-h-[44px]">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary shrink-0">
-                    <Phone className="w-4 h-4" />
+              <div className="mt-6 space-y-2 text-left">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30 border border-border/20 transition-colors hover:border-primary/30">
+                    <div className="p-2 bg-primary/10 rounded-lg text-primary"><Phone className="w-4 h-4" /></div>
+                    <div className="min-w-0 flex-1"><p className="text-[10px] text-muted-foreground font-black uppercase tracking-tight">Phone</p><p className="font-bold text-sm truncate">{user.profile.mobile || 'Not provided'}</p></div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] sm:text-xs text-muted-foreground">Mobile Number</p>
-                    <p className="font-medium text-xs sm:text-sm truncate min-h-[20px]">{user.profile.mobile || 'Not provided'}</p>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30 border border-border/20 transition-colors hover:border-primary/30">
+                    <div className="p-2 bg-primary/10 rounded-lg text-primary"><Mail className="w-4 h-4" /></div>
+                    <div className="min-w-0 flex-1"><p className="text-[10px] text-muted-foreground font-black uppercase tracking-tight">Email</p><p className="font-bold text-sm truncate">{user.profile.email}</p></div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 text-sm p-2 sm:p-3 rounded-lg hover:bg-secondary/50 transition-colors min-h-[44px]">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary shrink-0">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] sm:text-xs text-muted-foreground">Email Address</p>
-                    <p className="font-medium text-xs sm:text-sm truncate min-h-[20px]">{user.profile.email}</p>
-                  </div>
-                </div>
-              </div>
-
-              <Dialog
-                open={isEditing}
-                onOpenChange={(open) => {
-                  setIsEditing(open);
-                  if (!open) setEditAttempted(false);
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full mt-6 gap-2 min-h-[44px] text-xs sm:text-sm">
-                    <Edit2 className="w-4 h-4" /> Edit Profile
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Edit Profile</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full Name</Label>
-                      <Input 
-                        id="name" 
-                        value={editName} 
-                        onChange={(e) => setEditName(e.target.value)} 
-                        placeholder="John Doe"
-                        aria-invalid={editAttempted && editName.trim().length < 2}
-                        className={cn(editAttempted && editName.trim().length < 2 && "border-destructive focus-visible:ring-destructive")}
-                      />
-                      {editAttempted && editName.trim().length < 2 && (
-                        <p className="text-xs text-destructive">Name must be at least 2 characters long.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="mobile">Mobile Number</Label>
-                      <Input 
-                        id="mobile" 
-                        value={editMobile} 
-                        onChange={(e) => setEditMobile(e.target.value)} 
-                        placeholder="+91 99999 99999"
-                        aria-invalid={editAttempted && editMobile.trim().length > 0 && !/^\+?\d{10,15}$/.test(editMobile.trim())}
-                        className={cn(
-                          editAttempted &&
-                            editMobile.trim().length > 0 &&
-                            !/^\+?\d{10,15}$/.test(editMobile.trim()) &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                      />
-                      {editAttempted && editMobile.trim().length > 0 && !/^\+?\d{10,15}$/.test(editMobile.trim()) && (
-                        <p className="text-xs text-destructive">Enter a valid mobile number (10–15 digits).</p>
-                      )}
-                    </div>
-                    <Button onClick={handleUpdateProfile} disabled={updateProfileMutation.isPending} className="w-full min-h-[44px]">
-                      {updateProfileMutation.isPending ? 'Updating...' : 'Save Changes'}
+                <Dialog open={isEditing} onOpenChange={(o) => { setIsEditing(o); if(!o) setEditAttempted(false); }}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="w-full mt-6 gap-2 min-h-[44px] text-xs font-bold rounded-xl border-border/50 hover:bg-secondary/50">
+                      <Edit2 className="w-4 h-4" /> Edit Profile
                     </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-2xl sm:max-w-md">
+                    <DialogHeader><DialogTitle className="font-black text-2xl tracking-tight">Edit Profile</DialogTitle></DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-name" className="text-[10px] font-black uppercase tracking-wider text-muted-foreground px-1">Full Name</Label>
+                        <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} className="rounded-xl min-h-[44px] font-bold" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-mobile" className="text-[10px] font-black uppercase tracking-wider text-muted-foreground px-1">Mobile Number</Label>
+                        <Input id="edit-mobile" value={editMobile} onChange={(e) => setEditMobile(e.target.value)} className="rounded-xl min-h-[44px] font-bold" placeholder="+91 99999 99999" />
+                      </div>
+                      <Button onClick={handleUpdateProfile} className="w-full min-h-[48px] rounded-xl font-bold text-base mt-2" disabled={updateProfileMutation.isPending}>
+                        {updateProfileMutation.isPending ? 'Updating...' : 'Save Profile Changes'}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </div>
 
-          {/* Right Content - Stats & Bookings */}
-          <div className="md:col-span-8 space-y-6 sm:space-y-8">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-4">
+          {/* Right Content - Full Width Grid (8 cols) */}
+          <div className="md:col-span-8 space-y-8">
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
               {[
-              { label: 'Bookings', value: bookings?.length || 0, icon: Calendar },
-              { label: 'Properties', value: subscriptionInfo?.used || 0, icon: MapPin },
-              { label: 'Reviews', value: extraStats?.reviews || 0, icon: CheckCircle2 },
-              { label: 'Saved', value: extraStats?.saved || 0, icon: Heart },
-            ].map((stat, i) => (
-                <div key={i} className="bg-card/50 border border-border/50 rounded-xl p-2 sm:p-4 flex flex-col items-center justify-center text-center hover:bg-card/80 transition-colors cursor-pointer group min-h-[80px] xs:min-h-[90px] sm:min-h-[100px]">
-                  <stat.icon className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground mb-1 sm:mb-2 group-hover:text-primary transition-colors" />
-                  <span className="text-base xs:text-lg sm:text-2xl font-bold">{stat.value}</span>
-                  <span className="text-[9px] sm:text-xs text-muted-foreground uppercase tracking-wide truncate w-full px-1">{stat.label}</span>
+                { label: 'Shortlisted', value: extraStats?.saved || 0, icon: Heart, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+                { label: 'My Listings', value: ownerProperties?.length || 0, icon: Building2, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+                { label: 'Visits', value: bookings?.length || 0, icon: Calendar, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+                { label: 'Trust Score', value: user.profile.trustScore || 0, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+              ].map((stat, i) => (
+                <div key={stat.label} className="bg-card border border-border/50 rounded-2xl p-4 sm:p-5 flex flex-col items-center sm:items-start shadow-sm hover:shadow-md transition-all duration-300 hover:border-primary/30 group">
+                  <div className={cn("p-2 rounded-xl mb-3 transition-colors", stat.bg)}>
+                    <stat.icon className={cn("w-5 h-5", stat.color)} />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-black text-foreground antialiased tracking-tight group-hover:text-primary transition-colors">{stat.value}</div>
+                  <div className="text-[10px] sm:text-xs font-black text-muted-foreground uppercase tracking-wider">{stat.label}</div>
                 </div>
               ))}
             </div>
 
-            {/* Subscription Card */}
-            <div className="bg-card border border-border rounded-xl p-4 sm:p-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-10 hidden sm:block">
-                <Crown className="w-24 h-24 rotate-12" />
-              </div>
-              <div className="relative z-10">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-                  <div>
-                    <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
-                      <Crown className="w-5 h-5 text-primary" />
-                      My Subscription
-                    </h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm">Manage your plan and billing.</p>
+            {/* Premium Experience Card */}
+            <div className="bg-card border border-border/50 rounded-2xl p-6 relative overflow-hidden group/premium">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover/premium:opacity-10 transition-opacity"><Crown className="w-32 h-32 rotate-12" /></div>
+              <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 font-black uppercase text-[10px] tracking-widest px-2 py-0.5">Premium Feature</Badge>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => navigate('/plans')} className="min-h-[44px] px-6 w-full sm:w-auto text-xs sm:text-sm">
-                    {subscriptionInfo?.plan ? 'Upgrade Plan' : 'View Plans'}
-                  </Button>
+                  <h3 className="text-xl font-black tracking-tight text-foreground">Zero Broker Pro</h3>
+                  <p className="text-muted-foreground text-sm font-medium">Unlock priority listings and identity verification.</p>
                 </div>
-
-                {subscriptionInfo?.plan ? (
-                  <div className="bg-secondary/30 rounded-lg p-3 sm:p-4">
-                    <div className="flex justify-between items-center mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-base sm:text-lg">{subscriptionInfo.plan.name}</span>
-                        {subscriptionInfo.plan.is_recommended && (
-                          <Badge variant="secondary" className="text-[10px] sm:text-xs">PRO</Badge>
-                        )}
-                      </div>
-                      <span className="font-bold text-base sm:text-lg">₹{subscriptionInfo.plan.price_monthly}<span className="text-xs sm:text-sm font-normal text-muted-foreground">/mo</span></span>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[11px] sm:text-sm">
-                        <span className="text-muted-foreground">Active Listings</span>
-                        <span className="font-medium">{subscriptionInfo.used} of {subscriptionInfo.plan.max_listings || '∞'} used</span>
-                      </div>
-                      <Progress 
-                        value={subscriptionInfo.plan.max_listings ? (subscriptionInfo.used / subscriptionInfo.plan.max_listings) * 100 : 0} 
-                        className="h-1.5 sm:h-2" 
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-secondary/30 rounded-lg p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-sm sm:text-base">Free Plan</p>
-                      <p className="text-[11px] sm:text-sm text-muted-foreground">Limited features active.</p>
-                    </div>
-                    <Button size="sm" onClick={() => navigate('/plans')} className="min-h-[44px] px-6 w-full sm:w-auto text-xs sm:text-sm">Subscribe Now</Button>
-                  </div>
-                )}
+                <Button variant="default" onClick={() => navigate('/plans')} className="w-full sm:w-auto px-8 min-h-[48px] rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+                  View Plans
+                </Button>
               </div>
             </div>
 
-          {/* Right Content - Activities & Tabs */}
-          <div className="lg:col-span-8">
-            <Tabs value={defaultTab} onValueChange={handleTabChange} className="w-full">
-              <div className="pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-                <TabsList className="w-full grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-7 gap-1 mb-8 bg-card/50 backdrop-blur-sm border border-border/50 p-1 h-auto rounded-xl">
-                  <TabsTrigger value="activity" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Activity
-                  </TabsTrigger>
-                  <TabsTrigger value="properties" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Properties
-                  </TabsTrigger>
-                  <TabsTrigger value="bookings" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Bookings
-                  </TabsTrigger>
-                  <TabsTrigger value="payments" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Payments
-                  </TabsTrigger>
-                  <TabsTrigger value="leases" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Leases
-                  </TabsTrigger>
-                  <TabsTrigger value="messages" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Messages
-                  </TabsTrigger>
-                  <TabsTrigger value="saved" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <Heart className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Saved
-                  </TabsTrigger>
-                  <TabsTrigger value="availability" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Availability
-                  </TabsTrigger>
-                  <TabsTrigger value="verification" className="px-2 xs:px-3 sm:px-4 py-2 sm:py-3 min-h-[44px] rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all flex items-center justify-center gap-1.5 xs:gap-2 font-bold text-[9px] xs:text-xs sm:text-sm">
-                    <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> KYC
-                  </TabsTrigger>
+            {/* Dashboard Tabs */}
+            <Tabs defaultValue={defaultTab} onValueChange={handleTabChange} className="w-full">
+              <div className="relative mb-6 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scroll-smooth">
+                <TabsList className="w-full h-auto p-1.5 bg-secondary/50 backdrop-blur-sm rounded-2xl flex overflow-x-auto no-scrollbar justify-start items-center gap-1.5 border border-border/40">
+                  {['activity', 'properties', 'bookings', 'saved', 'availability', 'verification'].map((tab) => (
+                    <TabsTrigger key={tab} value={tab} className="rounded-xl py-3 px-6 text-xs font-black uppercase tracking-widest min-w-[140px] transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=active]:shadow-primary/25">
+                      {tab}
+                    </TabsTrigger>
+                  ))}
                 </TabsList>
               </div>
 
-              <TabsContent value="activity" className="space-y-6">
-                {/* Analytics Section */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-                  <div className="bg-card/50 border border-border/50 p-4 sm:p-5 rounded-2xl">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
-                        <TrendingUp className="w-5 h-5" />
-                      </div>
-                      <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Views</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <h4 className="text-2xl sm:text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.views || 0), 0) || 0}</h4>
-                      <span className="text-[10px] sm:text-xs text-green-500 font-medium">+12% vs last month</span>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-card/50 border border-border/50 p-4 sm:p-5 rounded-2xl">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-purple-500/10 rounded-lg text-purple-500">
-                        <UsersIcon className="w-5 h-5" />
-                      </div>
-                      <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Active Inquiries</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <h4 className="text-2xl sm:text-3xl font-bold">{ownerProperties?.reduce((acc, p) => acc + (p.leads || 0), 0) || 0}</h4>
-                      <span className="text-[10px] sm:text-xs text-green-500 font-medium">+5 new today</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-card/50 border border-border/50 p-4 sm:p-5 rounded-2xl">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-green-500/10 rounded-lg text-green-500">
-                        <ShieldCheck className="w-5 h-5" />
-                      </div>
-                      <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Visits Verified</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <h4 className="text-2xl sm:text-3xl font-bold">{bookings?.filter(b => b.booking_status === 'completed').length || 0}</h4>
-                      <span className="text-[10px] sm:text-xs text-muted-foreground font-medium">Out of {bookings?.length || 0} total</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recent Bookings */}
-                <div>
-<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-  <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-center sm:text-left">
-    Recent Bookings
-  </h3>
-
-  <Button
-    variant="ghost"
-    size="sm"
-    className="min-h-[44px] w-full sm:w-auto text-sm sm:text-base"
-    onClick={() => navigate('/services')}
-  >
-    New Booking
-  </Button>
-</div>
-
-                  {bookings && bookings.length > 0 ? (
-                  <div className="space-y-4 px-2 sm:px-0">
-  {bookings.map((booking) => (
-    <div
-      key={booking.id}
-      className="group bg-card hover:bg-card/80 border border-border/50 rounded-xl p-3 sm:p-4 flex flex-col md:flex-row gap-4 transition-all duration-300 hover:shadow-lg hover:border-primary/20"
-    >
-      {/* Image Section */}
-      <div className="w-full md:w-40 h-44 sm:h-52 md:h-auto rounded-lg overflow-hidden shrink-0 relative">
-        <img
-          src={booking.services?.image_url}
-          alt={booking.services?.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
-          <span className="text-white text-xs sm:text-sm font-medium truncate">
-            {booking.services?.name}
-          </span>
-        </div>
-      </div>
-
-      {/* Content Section */}
-      <div className="flex-1 min-w-0 flex flex-col justify-between">
-        {/* Header */}
-        <div>
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-3">
-            <div className="min-w-0">
-              <h4 className="font-bold text-base sm:text-lg md:text-xl text-foreground group-hover:text-primary transition-colors truncate">
-                {booking.properties?.title || "Property Visit"}
-              </h4>
-
-              <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 truncate">
-                <MapPin className="w-3.5 h-3.5 shrink-0" />
-                {booking.properties?.address || "Location"}
-              </p>
-            </div>
-
-            <Badge
-              variant={
-                booking.booking_status === "confirmed"
-                  ? "default"
-                  : booking.booking_status === "completed"
-                  ? "secondary"
-                  : "outline"
-              }
-              className={cn(
-                "self-start sm:self-auto text-[10px] sm:text-xs px-2 py-1",
-                booking.booking_status === "confirmed"
-                  ? "bg-green-500 hover:bg-green-600 text-white"
-                  : booking.booking_status === "pending"
-                  ? "bg-yellow-500/10 text-yellow-600 border-yellow-200"
-                  : ""
-              )}
-            >
-              {booking.booking_status}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Footer Info */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-[11px] sm:text-xs font-medium text-muted-foreground border-t border-border/50 pt-3 mt-3">
-          <div className="flex flex-wrap sm:flex-nowrap gap-2 sm:gap-4">
-            <span className="flex items-center gap-1.5 bg-secondary/50 px-3 py-2 rounded-md min-h-[36px]">
-              <Calendar className="w-3.5 h-3.5" />
-              {new Date(booking.visit_date).toLocaleDateString(undefined, {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              })}
-            </span>
-
-            <span className="flex items-center gap-1.5 bg-secondary/50 px-3 py-2 rounded-md min-h-[36px]">
-              <Clock className="w-3.5 h-3.5" />
-              {booking.visit_time}
-            </span>
-          </div>
-
-          {/* CTA Button */}
-          {booking.booking_status === "confirmed" &&
-            booking.tenant_id === user.profile.id && (
-              <Button
-                size="sm"
-                variant="default"
-                className="w-full sm:w-auto sm:ml-auto min-h-[44px] px-5 text-xs sm:text-sm font-semibold rounded-lg gap-2 shadow-md shadow-primary/20"
-                onClick={() => {
-                  setSelectedBookingForOTP({
-                    id: booking.id,
-                    propertyTitle:
-                      booking.properties?.title || "Property Visit",
-                    date: new Date(
-                      booking.visit_date
-                    ).toLocaleDateString(),
-                    time: booking.visit_time,
-                    address: booking.properties?.address || "",
-                    tenant_id: booking.tenant_id,
-                    owner_id: booking.owner_id,
-                  });
-                  setIsOTPOpen(true);
-                }}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                Verify Visit
-              </Button>
-            )}
-        </div>
-      </div>
-    </div>
-  ))}
-</div>
-                  ) : (
-                    <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
-                      <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
-                        <Calendar className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-lg font-semibold mb-2">No bookings yet</h3>
-                      <p className="text-muted-foreground max-w-xs mx-auto mb-6">
-                        Book your first home service today and track it here.
-                      </p>
-                      <Button onClick={() => navigate('/services')} className="min-h-[44px]">
-                        Explore Services
-                      </Button>
-                    </div>
-                  )}
+              <TabsContent value="activity">
+                <div className="bg-card/30 border-2 border-dashed border-border/50 rounded-3xl py-12 px-6 text-center">
+                  <Clock className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                  <p className="text-muted-foreground font-bold">Your recent activity feed will appear here.</p>
                 </div>
               </TabsContent>
 
               <TabsContent value="properties" className="space-y-6">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-                  <div>
-                    <h3 className="text-xl font-bold">My Listed Properties</h3>
-                    <p className="text-sm text-muted-foreground">Manage your active listings and track their performance.</p>
-                  </div>
-                  <Button onClick={() => navigate('/post-property')} className="w-full sm:w-auto gap-2 min-h-[44px]">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+                  <h3 className="text-xl font-black tracking-tight">Active Listings</h3>
+                  <Button onClick={() => navigate('/post-property')} className="w-full sm:w-auto gap-2 min-h-[44px] rounded-xl font-bold">
                     <Plus className="w-4 h-4" /> Post New
                   </Button>
                 </div>
-
-                {ownerPropertiesLoading ? (
+                {ownerProperties?.length ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {[1, 2].map(i => <div key={i} className="h-64 bg-card/50 animate-pulse rounded-2xl border border-border" />)}
-                  </div>
-                ) : ownerProperties && ownerProperties.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {ownerProperties.map((property) => (
-                      <div key={property.id} className="space-y-3 group">
-                        <PropertyCard property={{
-                          ...property,
-                          listingType: property.type,
-                          propertyType: property.property_category,
-                          bhk: property.bedrooms,
-                          furnishing: property.furnishing_status,
-                          carpetArea: property.area,
-                        }} />
-                        <div className="flex items-center justify-between px-2">
-                          <div className="flex gap-4">
-                            <div className="text-xs flex items-center gap-1 text-muted-foreground min-h-[32px]">
-                              <Eye className="w-3 h-3" /> {property.views || 0}
-                            </div>
-                            <div className="text-xs flex items-center gap-1 text-muted-foreground min-h-[32px]">
-                              <UsersIcon className="w-3 h-3" /> {property.leads || 0}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant={property.is_available ? 'outline' : 'default'}
-                            className="h-11 min-h-[44px] text-[10px] font-bold uppercase tracking-wider px-4"
-                            onClick={() =>
-                              togglePropertyStatusMutation.mutate({ id: property.id, isActive: !property.is_available })
-                            }
-                          >
-                            {property.is_available ? 'Pause listing' : 'Activate listing'}
-                          </Button>
-                        </div>
-                      </div>
+                    {ownerProperties.filter(p => (p as any).status !== 'archived').map(p => (
+                      <PropertyCard 
+                        key={p.id} 
+                        property={{...p, listingType: (p as any).type, bhk: (p as any).bedrooms, carpetArea: (p as any).area} as any} 
+                        onDelete={(id) => setPropertyToDelete(id)}
+                      />
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-20 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center">
-                    <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
-                      <Building2 className="w-8 h-8 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">No properties listed</h3>
-                    <p className="text-muted-foreground max-w-xs mx-auto mb-6">
-                      List your first property and reach thousands of verified tenants.
-                    </p>
-                    <Button onClick={() => navigate('/post-property')} className="min-h-[44px]">
-                      Post a Property
-                    </Button>
+                  <div className="text-center py-20 bg-secondary/20 rounded-2xl border-2 border-dashed border-border/50">
+                    <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
+                    <p className="font-bold text-muted-foreground">No properties listed yet.</p>
                   </div>
                 )}
               </TabsContent>
 
-              <TabsContent value="payments" className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                  {/* Rent Schedule */}
-                  <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 sm:mb-6">
-                      <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-primary" />
-                        Rent Schedule
-                      </h3>
-                    </div>
-                    
-                    <div className="space-y-3 sm:space-y-4">
-                      {rentSchedule && rentSchedule.length > 0 ? (
-                        rentSchedule.map((rent) => (
-                          <div key={rent.id} className="flex items-center justify-between p-3 sm:p-4 bg-secondary/20 rounded-xl border border-border/50">
-                            <div className="min-w-0 flex-1 mr-2">
-                              <p className="font-bold text-xs sm:text-sm truncate">{rent.properties?.title}</p>
-                              <p className="text-[10px] sm:text-xs text-muted-foreground">Due: {new Date(rent.due_date).toLocaleDateString()}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="font-bold text-primary text-xs sm:text-sm">₹{rent.amount.toLocaleString()}</p>
-                              <Badge variant={rent.status === 'paid' ? 'default' : 'outline'} className="text-[10px] h-5">
-                                {rent.status}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-center py-8 text-muted-foreground text-sm">No upcoming rent payments.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Invoices */}
-                  <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 sm:mb-6">
-                      <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
-                        <Receipt className="w-5 h-5 text-primary" />
-                        Recent Invoices
-                      </h3>
-                    </div>
-                    
-                    <div className="space-y-3 sm:space-y-4">
-                      {invoices && invoices.length > 0 ? (
-                        invoices.map((inv) => (
-                          <div key={inv.id} className="flex items-center justify-between p-3 sm:p-4 bg-secondary/20 rounded-xl border border-border/50">
-                            <div className="min-w-0 flex-1 mr-2">
-                              <p className="font-bold text-xs sm:text-sm truncate">{inv.description}</p>
-                              <p className="text-[10px] sm:text-xs text-muted-foreground">{new Date(inv.created_at).toLocaleDateString()}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="font-bold text-xs sm:text-sm">₹{inv.amount.toLocaleString()}</p>
-                              <Badge variant="secondary" className="text-[10px] h-5">
-                                {inv.status || 'Paid'}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-center py-8 text-muted-foreground text-sm">No invoices found.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="leases" className="space-y-6">
-                <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 mb-6">
-                  <h3 className="text-xl font-bold">My Active Leases</h3>
-                </div>
-
-                {userLeases && userLeases.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                    {userLeases.map((lease) => (
-                      <div key={lease.id} className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm hover:border-primary/30 transition-all">
-                        <div className="flex justify-between items-start mb-4 gap-2">
-                          <div className="min-w-0 flex-1">
-                            <h4 className="font-bold text-base sm:text-lg truncate">{lease.properties?.title}</h4>
-                            <p className="text-xs sm:text-sm text-muted-foreground truncate">{lease.properties?.address}</p>
-                          </div>
-                          <Badge className="bg-green-500 shrink-0 text-[10px] sm:text-xs">{lease.status}</Badge>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-3 sm:gap-4 py-4 border-y border-border/50 my-4">
-                          <div>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">Start Date</p>
-                            <p className="font-medium text-xs sm:text-sm">{new Date(lease.start_date).toLocaleDateString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">End Date</p>
-                            <p className="font-medium text-xs sm:text-sm">{new Date(lease.end_date).toLocaleDateString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">Monthly Rent</p>
-                            <p className="font-bold text-xs sm:text-sm text-primary">₹{lease.monthly_rent?.toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-bold">Lease ID</p>
-                            <p className="font-medium text-xs sm:text-sm truncate">#{lease.id.slice(0, 8)}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                          <Button variant="outline" size="sm" className="w-full gap-2 min-h-[44px]">
-                            <FileText className="w-4 h-4" /> View Agreement
-                          </Button>
-                          <Button variant="outline" size="sm" className="w-full gap-2 min-h-[44px]">
-                            <Info className="w-4 h-4" /> Details
-                          </Button>
-                        </div>
+              <TabsContent value="bookings" className="space-y-6">
+                <h3 className="text-xl font-black tracking-tight mb-6">Upcoming Scheduled Visits</h3>
+                {bookings?.length ? (
+                  <div className="space-y-4">
+                    {bookings.map(booking => (
+                      <div key={booking.id} className="bg-card border border-border/50 rounded-2xl p-5 flex flex-col md:flex-row gap-5 items-center transition-all hover:bg-card/80 hover:border-primary/30 group">
+                         <div className="w-full md:w-32 h-24 rounded-xl overflow-hidden shrink-0"><img src={booking.services?.image_url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" /></div>
+                         <div className="flex-1 min-w-0">
+                           <h4 className="font-black text-lg truncate">{booking.properties?.title || 'Visit Confirmation'}</h4>
+                           <div className="flex flex-wrap gap-4 mt-2">
+                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-bold"><Calendar className="w-4 h-4" /> {new Date(booking.visit_date).toLocaleDateString()}</div>
+                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-bold"><Clock className="w-4 h-4" /> {booking.visit_time}</div>
+                           </div>
+                         </div>
+                         <Badge className="font-black uppercase tracking-widest text-[10px] px-3 py-1 rounded-lg">{booking.booking_status}</Badge>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-20 bg-card/30 rounded-2xl border border-dashed border-border">
-                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <h4 className="font-bold text-lg mb-2">No active leases</h4>
-                    <p className="text-muted-foreground max-w-xs mx-auto mb-6">You don't have any active rental agreements at the moment.</p>
-                    <Button onClick={() => navigate('/properties')} className="min-h-[44px]">Browse Properties</Button>
+                  <div className="text-center py-20 bg-secondary/20 rounded-2xl">
+                    <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-20" />
+                    <p className="font-bold text-muted-foreground">No bookings scheduled.</p>
                   </div>
                 )}
               </TabsContent>
 
-              <TabsContent value="messages" className="space-y-6">
-                <div className="bg-card rounded-2xl border border-border p-6 shadow-sm min-h-[400px] flex flex-col">
-                  <div className="flex items-center justify-between mb-6 pb-4 border-b border-border/50">
-                    <h3 className="text-xl font-bold flex items-center gap-2">
-                      <MessageSquare className="w-5 h-5 text-primary" />
-                      Messages
-                    </h3>
+              <TabsContent value="saved" className="space-y-8">
+                <h3 className="text-xl font-black tracking-tight mb-4">Your Shortlisted Dream Homes</h3>
+                {savedProperties?.length ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {savedProperties.map(p => <PropertyCard key={p.id} property={p} />)}
                   </div>
-                  
-                  <div className="flex-1 flex flex-col items-center justify-center text-center">
-                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                      <MessageSquare className="w-10 h-10 text-primary" />
-                    </div>
-                    <h4 className="text-lg font-bold mb-2">No messages yet</h4>
-                    <p className="text-muted-foreground max-w-xs">Your conversations with property owners and tenants will appear here.</p>
-                    <Button variant="outline" className="mt-6 min-h-[44px]" onClick={() => navigate('/properties')}>
-                      Start a Conversation
-                    </Button>
+                ) : (
+                  <div className="text-center py-24 bg-card/30 rounded-3xl border-2 border-dashed border-border/50">
+                    <Heart className="w-16 h-16 text-rose-500/20 mx-auto mb-6" />
+                    <h4 className="text-lg font-black text-foreground mb-2">No bookmarks yet</h4>
+                    <p className="text-muted-foreground max-w-xs mx-auto mb-8 font-medium">Heart properties you like to see them organized here.</p>
+                    <Button onClick={() => navigate('/properties')} className="min-h-[48px] rounded-xl font-bold uppercase text-xs tracking-widest">Start Exploring</Button>
                   </div>
-                </div>
+                )}
               </TabsContent>
 
-              <TabsContent value="saved" className="space-y-6">
-                <div>
-                  <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 mb-6">
-                    <h3 className="text-xl font-bold">Saved Properties</h3>
-                    <p className="text-sm text-muted-foreground">{savedProperties?.length || 0} properties</p>
-                  </div>
-
-                  {savedLoading ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      {[1, 2].map((i) => (
-                        <div key={i} className="h-64 rounded-2xl bg-muted animate-pulse" />
-                      ))}
-                    </div>
-                  ) : savedProperties && savedProperties.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      {savedProperties.map((property) => (
-                        <PropertyCard key={property.id} property={property} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-16 bg-card/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center p-4">
-                      <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
-                        <Building2 className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-lg font-semibold mb-2">No saved properties</h3>
-                      <p className="text-muted-foreground max-w-xs mx-auto mb-6">
-                        Save properties you like to view them later.
-                      </p>
-                      <Button className="min-h-[44px]" onClick={() => navigate('/properties')}>
-                        Browse Properties
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
               <TabsContent value="availability" className="space-y-6">
-                 <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
-                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                     <div className="flex items-center gap-3">
-                       <div className="p-2 sm:p-3 bg-primary/10 rounded-xl text-primary">
-                         <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
-                       </div>
-                       <div>
-                         <h3 className="text-lg sm:text-xl font-bold">Manage Visit Availability</h3>
-                         <p className="text-xs sm:text-sm text-muted-foreground">Set your available days and time slots for property visits.</p>
-                       </div>
-                     </div>
-                     <Button 
-                       variant="outline" 
-                       size="sm" 
-                       className="gap-2 min-h-[44px] w-full sm:w-auto text-xs sm:text-sm" 
-                       onClick={() => saveAvailabilityMutation.mutate()}
-                       disabled={saveAvailabilityMutation.isPending}
-                     >
-                  {saveAvailabilityMutation.isPending ? (
-                    <span className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4" />
-                  )}
-                  {saveAvailabilityMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
-                    <div className="w-1.5 h-6 bg-primary rounded-full" />
-                    Select Available Days
-                  </h4>
-                  <div className="grid grid-cols-2 xs:grid-cols-4 md:grid-cols-7 gap-2">
-                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                    <button
-                      key={day}
-                      onClick={() => toggleDay(day)}
-                      className={cn(
-                        "py-4 min-h-[44px] rounded-xl border text-xs font-bold transition-all flex items-center justify-center",
-                        availableDays.includes(day)
-                          ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                          : "bg-background border-border hover:border-primary/50"
-                      )}
-                    >
-                      {day}
-                    </button>
-                  ))}
-                </div>
-                  <p className="text-xs text-muted-foreground italic">
-                    * Weekends are highly recommended for higher visit rates.
-                  </p>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-xl font-black tracking-tight text-foreground">Visit Availability</h3>
+                    <p className="text-sm text-muted-foreground font-medium">Control when potential tenants can visit your properties.</p>
+                  </div>
+                  <Button onClick={() => saveAvailabilityMutation.mutate()} disabled={saveAvailabilityMutation.isPending} className="w-full sm:w-auto min-h-[44px] rounded-xl font-bold bg-primary shadow-lg shadow-primary/20">
+                    {saveAvailabilityMutation.isPending ? 'Saving...' : 'Save Settings'}
+                  </Button>
                 </div>
 
-                <div className="space-y-4">
-                  <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
-                    <div className="w-1.5 h-6 bg-primary rounded-full" />
-                    Set Time Slots
-                  </h4>
-                  <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
-                    {timeSlots.map((item) => (
-                      <div
-                        key={item.id}
-                        className={cn(
-                          "flex items-center justify-between p-3 min-h-[44px] rounded-xl border transition-all relative group/slot",
-                          item.active ? "bg-primary/5 border-primary/30" : "bg-background border-border"
-                        )}
-                      >
-                        <div className="flex-1 cursor-pointer flex items-center min-h-[44px]" onClick={() => toggleSlot(item.id)}>
-                          <span className={cn("text-xs font-medium", item.active ? "text-primary" : "text-muted-foreground")}>
-                            {item.slot}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleSlot(item.id)}
-                            className="min-h-[44px] min-w-[44px] flex items-center justify-center"
-                          >
-                            <span
-                              className={cn(
-                                "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
-                                item.active ? "border-primary bg-primary" : "border-muted-foreground/30 hover:border-primary/50"
-                              )}
-                            >
-                              {item.active && <CheckCircle2 className="w-4 h-4 text-white" />}
-                            </span>
-                          </button>
-                          {timeSlots.length > 4 && (
-                            <button 
-                              onClick={() => removeSlot(item.id)}
-                              className="w-11 h-11 flex items-center justify-center text-muted-foreground hover:text-destructive opacity-0 group-hover/slot:opacity-100 transition-opacity"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                <div className="grid gap-6">
+                  {/* Days Section */}
+                  <div className="bg-card border border-border/50 rounded-2xl p-6">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-4">Available Days</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                        <button
+                          key={day}
+                          onClick={() => toggleDay(day)}
+                          className={cn(
+                            "px-5 py-2.5 rounded-xl text-xs font-black transition-all border-2",
+                            availableDays.includes(day) 
+                              ? "bg-primary border-primary text-primary-foreground shadow-md shadow-primary/20 scale-105" 
+                              : "bg-secondary/30 border-transparent text-muted-foreground hover:border-border"
                           )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Dialog open={isAddSlotOpen} onOpenChange={setIsAddSlotOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="w-full border border-dashed border-border rounded-xl min-h-[44px] text-muted-foreground hover:text-primary">
-                        <Plus className="w-4 h-4 mr-2" /> Add custom slot
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>Add Custom Time Slot</DialogTitle>
-                      </DialogHeader>
-                      <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Start Time</Label>
-                            <Input 
-                              type="time" 
-                              value={newSlotStart} 
-                              className="min-h-[44px]"
-                              onChange={(e) => setNewSlotStart(e.target.value)} 
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>End Time</Label>
-                            <Input 
-                              type="time" 
-                              value={newSlotEnd} 
-                              className="min-h-[44px]"
-                              onChange={(e) => setNewSlotEnd(e.target.value)} 
-                            />
-                          </div>
-                        </div>
-                        <Button onClick={handleAddCustomSlot} className="w-full min-h-[44px]">Add Slot</Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </div>
-
-                   <div className="mt-8 pt-6 border-t border-border/50 bg-secondary/10 px-6 pb-6 rounded-b-2xl">
-                     <div className="flex items-start gap-3">
-                       <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                       <div className="space-y-1">
-                         <p className="text-xs font-bold text-foreground uppercase tracking-wider">How it works</p>
-                         <p className="text-xs text-muted-foreground leading-relaxed">
-                           Once you set your availability, tenants can only book visits during these times. 
-                           Each booking requires a ₹99 refundable token. You will receive ₹49 if a tenant doesn't show up.
-                         </p>
-                       </div>
-                     </div>
-                   </div>
-                 </div>
-               </TabsContent>
-               <TabsContent value="verification" className="space-y-6">
-                <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 sm:p-3 bg-primary/10 rounded-xl text-primary">
-                        <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg sm:text-xl font-bold">Owner Verification (KYC)</h3>
-                        <p className="text-xs sm:text-sm text-muted-foreground">Get verified to list properties and build trust with tenants.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {user.profile.kycStatus === 'verified' ? (
-                    <div className="bg-green-500/10 border border-green-200 rounded-xl p-6 text-center flex flex-col items-center">
-                      <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mb-4 text-white">
-                        <CheckCircle2 className="w-10 h-10" />
-                      </div>
-                      <h4 className="text-lg font-bold text-green-700 mb-2">You are a Verified Owner!</h4>
-                      <p className="text-green-600/80 max-w-md mx-auto mb-6">
-                        Your account has been successfully verified. You now have access to premium listing features and a verified badge.
-                      </p>
-                      <Button onClick={() => navigate('/post-property')} variant="default" className="bg-green-600 hover:bg-green-700 min-h-[44px]">
-                        Post a Property
-                      </Button>
-                    </div>
-                  ) : user.profile.kycStatus === 'pending' ? (
-                    <div className="bg-yellow-500/10 border border-yellow-200 rounded-xl p-6 text-center flex flex-col items-center">
-                      <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center mb-4 text-white">
-                        <Clock className="w-10 h-10" />
-                      </div>
-                      <h4 className="text-lg font-bold text-yellow-700 mb-2">Verification in Progress</h4>
-                      <p className="text-yellow-600/80 max-w-md mx-auto">
-                        Our team is currently reviewing your documents. This usually takes 24-48 hours. We'll notify you once the process is complete.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {user.profile.kycStatus === 'rejected' && (
-                        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3">
-                          <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-bold text-destructive">Verification Rejected</p>
-                            <p className="text-sm text-destructive/80">{user.profile.kyc_rejection_reason || 'Please re-upload clear documents.'}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="fullName">Full Name (as per PAN)</Label>
-                            <Input 
-                              id="fullName" 
-                              value={kycForm.fullName} 
-                              onChange={(e) => setKycForm(prev => ({ ...prev, fullName: e.target.value }))}
-                              placeholder="JOHN DOE" 
-                              className="uppercase min-h-[44px]" 
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="pan">PAN Number</Label>
-                            <Input 
-                              id="pan" 
-                              value={kycForm.panNumber} 
-                              onChange={(e) => setKycForm(prev => ({ ...prev, panNumber: e.target.value }))}
-                              placeholder="ABCDE1234F" 
-                              className="uppercase min-h-[44px]" 
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="aadhaar">Aadhaar Number (Last 4 digits)</Label>
-                            <Input 
-                              id="aadhaar" 
-                              value={kycForm.aadhaarNumber} 
-                              onChange={(e) => setKycForm(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
-                              placeholder="1234" 
-                              maxLength={4} 
-                              className="min-h-[44px]"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <p className="text-sm font-medium mb-2">Required Documents</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="file"
-                              ref={selfieInputRef}
-                              className="hidden"
-                              accept="image/*"
-                              onChange={(e) => handleKycFileChange('selfie', e)}
-                            />
-                            <input
-                              type="file"
-                              ref={propertyDocInputRef}
-                              className="hidden"
-                              accept="image/*,application/pdf"
-                              onChange={(e) => handleKycFileChange('propertyDoc', e)}
-                            />
-                            <input
-                              type="file"
-                              ref={electricityBillInputRef}
-                              className="hidden"
-                              accept="image/*,application/pdf"
-                              onChange={(e) => handleKycFileChange('electricityBill', e)}
-                            />
-                            {[
-                              { label: 'Selfie', icon: Camera, type: 'selfie', key: 'selfie', ref: selfieInputRef },
-                              { label: 'Property Doc', icon: Building2, type: 'property_doc', key: 'propertyDoc', ref: propertyDocInputRef },
-                              { label: 'Elec. Bill', icon: Zap, type: 'electricity_bill', key: 'electricityBill', ref: electricityBillInputRef },
-                            ].map((doc) => (
-                              <button
-                                key={doc.type}
-                                onClick={() => doc.ref.current?.click()}
-                                className={cn(
-                                  "flex flex-col items-center justify-center p-4 min-h-[80px] border border-dashed rounded-xl transition-colors group relative",
-                                  kycFiles[doc.key as keyof typeof kycFiles] ? "bg-primary/5 border-primary" : "border-border hover:bg-secondary/50"
-                                )}
-                              >
-                                {kycFiles[doc.key as keyof typeof kycFiles] ? (
-                                  <CheckCircle2 className="w-6 h-6 text-primary mb-2" />
-                                ) : (
-                                  <doc.icon className="w-6 h-6 text-muted-foreground group-hover:text-primary mb-2" />
-                                )}
-                                <span className="text-xs font-medium">{doc.label}</span>
-                                {kycFiles[doc.key as keyof typeof kycFiles] && (
-                                  <Badge className="absolute -top-2 -right-2 px-1 h-5 min-w-5">1</Badge>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="pt-4 border-t border-border">
-                        <Button 
-                          className="w-full h-12 min-h-[44px] rounded-xl font-bold gap-2" 
-                          onClick={() => submitKycMutation.mutate()}
-                          disabled={submitKycMutation.isPending || !kycForm.panNumber || !kycForm.aadhaarNumber}
                         >
-                          {submitKycMutation.isPending ? (
-                            <span className="w-5 h-5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
-                          ) : (
-                            <ShieldCheck className="w-5 h-5" />
-                          )}
-                          {submitKycMutation.isPending ? 'Submitting...' : 'Submit for Verification'}
-                        </Button>
-                        <p className="text-[11px] text-muted-foreground text-center mt-3">
-                          By submitting, you agree to our terms for owner verification and data privacy.
-                        </p>
-                      </div>
+                          {day}
+                        </button>
+                      ))}
                     </div>
+                  </div>
+
+                  {/* Time Slots Section */}
+                  <div className="bg-card border border-border/50 rounded-2xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Time Slots</h4>
+                      <Dialog open={isAddSlotOpen} onOpenChange={setIsAddSlotOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 text-[10px] font-black uppercase tracking-wider text-primary hover:text-primary/80">
+                            <Plus className="w-3 h-3 mr-1" /> Add Custom
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="rounded-2xl sm:max-w-[400px]">
+                          <DialogHeader><DialogTitle className="font-black text-xl tracking-tight">Add Custom Slot</DialogTitle></DialogHeader>
+                          <div className="grid grid-cols-2 gap-4 py-4">
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Start Time</Label>
+                              <Input type="time" value={newSlotStart} onChange={e => setNewSlotStart(e.target.value)} className="rounded-xl font-bold h-12" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">End Time</Label>
+                              <Input type="time" value={newSlotEnd} onChange={e => setNewSlotEnd(e.target.value)} className="rounded-xl font-bold h-12" />
+                            </div>
+                          </div>
+                          <Button onClick={handleAddCustomSlot} className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest">Add Time Slot</Button>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
+                      {timeSlots.map(slot => (
+                        <div key={slot.id} className={cn(
+                          "relative flex items-center justify-between p-4 rounded-xl border-2 transition-all group",
+                          slot.active ? "bg-primary/5 border-primary/30" : "bg-secondary/10 border-transparent opacity-60"
+                        )}>
+                          <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => toggleSlot(slot.id)}>
+                            <div className={cn("w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors", slot.active ? "border-primary bg-primary" : "border-muted-foreground")}>
+                              {slot.active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                            <span className={cn("text-xs font-bold", slot.active ? "text-foreground" : "text-muted-foreground")}>{slot.slot}</span>
+                          </div>
+                          <button onClick={() => removeSlot(slot.id)} className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 text-destructive rounded-lg transition-all">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="verification" className="space-y-6">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-xl font-black tracking-tight text-foreground">Identity & Trust</h3>
+                    <p className="text-sm text-muted-foreground font-medium">Verify your identity to build trust and unlock direct owner listings.</p>
+                  </div>
+                  {user.profile.kycStatus === 'verified' && (
+                    <Badge variant="verified" className="bg-emerald-500 text-white h-10 px-4 rounded-xl text-xs font-black uppercase tracking-widest gap-2">
+                       <ShieldCheck className="w-4 h-4" /> Verified Citizen
+                    </Badge>
                   )}
                 </div>
+
+                {user.profile.kycStatus === 'verified' ? (
+                  <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-8 text-center">
+                    <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg shadow-emerald-500/20">
+                      <CheckCircle2 className="w-8 h-8" />
+                    </div>
+                    <h4 className="text-lg font-black text-foreground mb-1">Your Identity is Verified</h4>
+                    <p className="text-muted-foreground max-w-sm mx-auto text-sm font-medium">Thank you for helping us maintain a secure community. You now have full access to premium owner features.</p>
+                  </div>
+                ) : user.profile.kycStatus === 'pending' ? (
+                  <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-8 text-center">
+                    <div className="w-16 h-16 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg shadow-amber-500/20">
+                      <Clock className="w-8 h-8" />
+                    </div>
+                    <h4 className="text-lg font-black text-foreground mb-1">Verification in Progress</h4>
+                    <p className="text-muted-foreground max-w-sm mx-auto text-sm font-medium">Our team is reviewing your documents. This typically takes 24-48 hours. We'll notify you once complete.</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-6">
+                    <div className="bg-card border border-border/50 rounded-2xl p-6 space-y-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground ml-1">Documented Full Name</Label>
+                          <Input 
+                            placeholder="John Doe" 
+                            value={kycForm.fullName}
+                            onChange={e => setKycForm(p => ({ ...p, fullName: e.target.value }))}
+                            className="h-12 rounded-xl font-bold bg-secondary/20" 
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground ml-1">PAN Number</Label>
+                          <Input 
+                            placeholder="ABCDE1234F" 
+                            style={{ textTransform: 'uppercase' }}
+                            value={kycForm.panNumber}
+                            onChange={e => setKycForm(p => ({ ...p, panNumber: e.target.value.toUpperCase() }))}
+                            className="h-12 rounded-xl font-bold bg-secondary/20" 
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground ml-1">Aadhaar Number</Label>
+                        <Input 
+                          placeholder="0000 0000 0000" 
+                          value={kycForm.aadhaarNumber}
+                          onChange={e => setKycForm(p => ({ ...p, aadhaarNumber: e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim().substring(0, 14) }))}
+                          className="h-12 rounded-xl font-bold bg-secondary/20" 
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-3 xs:gap-4 py-2">
+                        {[
+                          { id: 'selfie', label: 'Face Verification', icon: Camera, ref: selfieInputRef },
+                          { id: 'propertyDoc', label: 'Property Deed', icon: FileText, ref: propertyDocInputRef },
+                          { id: 'electricityBill', label: 'Electricity Bill', icon: Zap, ref: electricityBillInputRef },
+                        ].map(doc => (
+                          <div key={doc.id} 
+                            onClick={() => doc.ref.current?.click()}
+                            className={cn(
+                              "flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-dashed transition-all cursor-pointer hover:border-primary/50 group/doc shrink-0",
+                              kycFiles[doc.id as keyof typeof kycFiles] ? "bg-primary/5 border-primary/40 shadow-inner" : "bg-secondary/20 border-border/50"
+                            )}
+                          >
+                            <input type="file" ref={doc.ref} className="hidden" accept="image/*,.pdf" onChange={e => handleKycFileChange(doc.id as any, e)} />
+                            <div className={cn("p-3 rounded-2xl mb-3 transition-transform group-hover/doc:scale-110", kycFiles[doc.id as keyof typeof kycFiles] ? "bg-primary/20 text-primary" : "bg-muted-foreground/10 text-muted-foreground")}>
+                              <doc.icon className="w-5 h-5 sm:w-6 sm:h-6" />
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-center truncate px-2 w-full">{kycFiles[doc.id as keyof typeof kycFiles]?.name || doc.label}</span>
+                            {kycFiles[doc.id as keyof typeof kycFiles] && <Badge variant="secondary" className="mt-2 text-[8px] h-4 bg-primary/10 text-primary font-black">SELECTED</Badge>}
+                          </div>
+                        ))}
+                      </div>
+
+                      <Button 
+                        onClick={() => submitKycMutation.mutate()} 
+                        disabled={submitKycMutation.isPending || !kycForm.fullName || !kycForm.panNumber || !kycForm.aadhaarNumber} 
+                        className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 relative overflow-hidden group/btn"
+                      >
+                        <div className={cn("absolute inset-0 bg-primary/10 -translate-x-full group-hover/btn:translate-x-0 transition-transform duration-500", submitKycMutation.isPending && "translate-x-0 animate-pulse")} />
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                          {submitKycMutation.isPending ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full" />
+                              Uploading Documents...
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="w-4 h-4" />
+                              Submit Verification Request
+                            </>
+                          )}
+                        </span>
+                      </Button>
+                      
+                      <p className="text-[10px] text-center text-muted-foreground font-medium px-4 opacity-70">
+                        By submitting, you agree to our <span className="text-primary cursor-pointer hover:underline">document processing policy</span>. Data is encrypted and stored securely for verification purposes only.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </div>
-          </div>
-        </div>
       </main>
       <Footer />
       {selectedBookingForOTP && (
@@ -1718,12 +1135,41 @@ export default function Profile() {
           booking={selectedBookingForOTP}
           open={isOTPOpen}
           onOpenChange={setIsOTPOpen}
-          onComplete={() => {
-            // In real app, refresh bookings
-            toast.success('Visit status updated');
-          }}
+          onComplete={() => toast.success('Visit verified successfully')}
         />
       )}
+ 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
+        <DialogContent className="rounded-2xl sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl tracking-tight flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-destructive" />
+              Archive Listing?
+            </DialogTitle>
+            <DialogDescription className="font-medium pt-2">
+              This will hide your property from all search results and active listings. You can still access historical visit data.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setPropertyToDelete(null)}
+              className="rounded-xl font-bold"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => propertyToDelete && deletePropertyMutation.mutate(propertyToDelete)}
+              disabled={deletePropertyMutation.isPending}
+              className="rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-destructive/20"
+            >
+              {deletePropertyMutation.isPending ? 'Archiving...' : 'Confirm Archive'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

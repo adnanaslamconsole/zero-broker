@@ -9,19 +9,19 @@ export const notificationService = {
   async sendNotification(params: {
     userId: string;
     title: string;
-    body: string;
+    message: string;
     type: NotificationItem['type'];
     metadata?: NotificationItem['metadata'];
     channels?: NotificationChannel[];
   }) {
-    const { userId, title, body, type, metadata, channels = ['in-app', 'email', 'sms'] } = params;
+    const { userId, title, message, type, metadata, channels = ['in-app', 'email', 'sms'] } = params;
 
     // 1. Send in-app notification
     if (channels.includes('in-app')) {
       const { error } = await supabase.from('notifications').insert({
         user_id: userId,
         title,
-        body,
+        message,
         type,
         metadata,
         created_at: new Date().toISOString(),
@@ -31,12 +31,12 @@ export const notificationService = {
 
     // 2. Simulate email/SMS (mocked for this implementation)
     if (channels.includes('email')) {
-      console.log(`[Email Sent to ${userId}]: ${title} - ${body}`);
+      console.log(`[Email Sent to ${userId}]: ${title} - ${message}`);
       // In a real app, this would call an email API like SendGrid or AWS SES
     }
 
     if (channels.includes('sms')) {
-      console.log(`[SMS Sent to ${userId}]: ${title} - ${body}`);
+      console.log(`[SMS Sent to ${userId}]: ${title} - ${message}`);
       // In a real app, this would call an SMS API like Twilio or MessageBird
     }
 
@@ -65,7 +65,7 @@ export const notificationService = {
     await this.sendNotification({
       userId: ownerId,
       title: 'New Site Visit Booked!',
-      body: `A site visit for "${propertyTitle}" has been booked on ${visitDate} at ${visitTime}. Token payment of ₹${amount} received.`,
+      message: `A site visit for "${propertyTitle}" has been booked on ${visitDate} at ${visitTime}. Token payment of ₹${amount} received.`,
       type: 'token-payment-received',
       metadata: { bookingId, amount, transactionReference: transactionRef },
     });
@@ -74,7 +74,7 @@ export const notificationService = {
     await this.sendNotification({
       userId: tenantId,
       title: 'Booking Confirmed!',
-      body: `Your site visit for "${propertyTitle}" on ${visitDate} at ${visitTime} is confirmed. Token payment of ₹${amount} received. Ref: ${transactionRef}`,
+      message: `Your site visit for "${propertyTitle}" on ${visitDate} at ${visitTime} is confirmed. Token payment of ₹${amount} received. Ref: ${transactionRef}`,
       type: 'booking-site-visit',
       metadata: { bookingId, amount, transactionReference: transactionRef },
     });

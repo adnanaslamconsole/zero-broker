@@ -27,12 +27,24 @@ export type UserFriendlyError = {
 const constraintMessageOverrides: Record<string, string> = {
   profiles_mobile_key: 'This mobile number is already in use. Try a different number.',
   profiles_email_key: 'This email is already in use. Try signing in instead.',
+  properties_price_check: 'Price must be a positive value.',
+  properties_area_check: 'Area must be a positive value.',
+};
+
+const columnFriendlyNames: Record<string, string> = {
+  title: 'Property Title',
+  description: 'Property Description',
+  price: 'Price',
+  area: 'Carpet Area',
+  locality: 'Locality',
+  address: 'Full Address',
+  city: 'City',
 };
 
 const toTitle = (value: string) =>
   value
-    .replaceAll('_', ' ')
-    .replaceAll('-', ' ')
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ')
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/^./, (c) => c.toUpperCase());
@@ -196,6 +208,16 @@ export const getUserFriendlyError = (error: unknown, context: ErrorContext = {})
       debugMessage,
       code: normalizedCode || undefined,
       constraint,
+      column,
+    };
+  }
+
+  if (normalizedMessage.includes('invalid input') || normalizedMessage.includes('malformed')) {
+    return {
+      category: 'validation',
+      message: column ? `The value for ${columnFriendlyNames[column] || toTitle(column)} is not valid.` : 'Please check your input and try again.',
+      debugMessage,
+      code: normalizedCode || undefined,
       column,
     };
   }

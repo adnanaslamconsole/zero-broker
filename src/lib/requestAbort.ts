@@ -1,3 +1,5 @@
+import { clearNonAuthStorage } from './localStorageTTL';
+
 type FetchInput = Parameters<typeof fetch>[0];
 type FetchInit = Parameters<typeof fetch>[1];
 
@@ -26,8 +28,14 @@ export const abortAllRequests = () => {
   }
 };
 
-export const appFetch = (input: FetchInput, init?: FetchInit) => {
+export const appFetch = (input: FetchInput, init?: FetchInit & { clearStorage?: boolean }) => {
+  if (init?.clearStorage) {
+    clearNonAuthStorage();
+  }
+  
   const controller = getController();
   const signal = mergeSignals(controller.signal, init?.signal ?? null);
-  return fetch(input, { ...init, signal });
+  
+  // Add cache: 'no-store' to ensure browser doesn't reuse results
+  return fetch(input, { ...init, signal, cache: 'no-store' });
 };

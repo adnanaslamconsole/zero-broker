@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { searchLocations, type LocationResult, type LocationSearchMeta } from '@/lib/locationSearchService';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 
 let activeDropdownCloser: (() => void) | null = null;
 
@@ -21,13 +23,12 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
   const [meta, setMeta] = useState<LocationSearchMeta>({ strategy: 'none', queryUsed: '' });
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // We debounce input changes to avoid firing a network request on every keystroke.
-  // 350ms stays within the requested 300–500ms range while still feeling responsive.
   const debouncedValue = useDebouncedValue(value, 350);
 
   const closeDropdown = useCallback(() => {
@@ -35,24 +36,61 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
     if (activeDropdownCloser === closeDropdown) activeDropdownCloser = null;
   }, []);
 
+  const handleDetectLocation = () => {
+    setIsDetecting(true);
+    setIsOpen(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
+            );
+            const data = await response.json();
+            const cityName = data.address?.city || data.address?.town || data.address?.village || data.display_name.split(',')[0];
+            
+            onChange(cityName);
+            onLocationSelect({
+              lat: latitude,
+              lon: longitude,
+              name: cityName,
+            });
+            closeDropdown();
+          } catch (error) {
+            console.error('Reverse geocoding error:', error);
+            toast.error('Could not determine city name');
+          } finally {
+            setIsDetecting(false);
+          }
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          toast.error('Location access denied');
+          setIsDetecting(false);
+        }
+      );
+    } else {
+      toast.error('Geolocation not supported');
+      setIsDetecting(false);
+    }
+  };
+
   useEffect(() => {
     setHasSearched(false);
   }, [value]);
 
   useEffect(() => {
-    // Cancel any in-flight request when a new debounced query arrives.
-    // This prevents duplicate/overlapping calls and ensures the UI only shows results for the latest query.
     abortRef.current?.abort();
     abortRef.current = null;
 
     const normalized = debouncedValue.trim();
-    if (!normalized || normalized.length < 3) {
+    if (!normalized || normalized.length < 2) {
       setIsLoading(false);
       setErrorMessage(null);
       setSuggestions([]);
       setMeta({ strategy: 'none', queryUsed: normalized });
       setHasSearched(false);
-      closeDropdown();
       return;
     }
 
@@ -67,22 +105,21 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
       .then(({ results, meta: nextMeta }) => {
         setSuggestions(results);
         setMeta(nextMeta);
+        if (results.length > 0) setIsOpen(true);
       })
       .catch((err) => {
         if ((err as Error)?.name === 'AbortError') return;
         setSuggestions([]);
         setMeta({ strategy: 'none', queryUsed: normalized });
-        setErrorMessage('Could not search locations right now. Please try again.');
+        setErrorMessage('Could not search locations. Please try again.');
       })
       .finally(() => {
         setIsLoading(false);
       });
 
     return () => controller.abort();
-  }, [closeDropdown, debouncedValue]);
+  }, [debouncedValue]);
 
-  // Ensure only one LocationSearch dropdown is open globally at a time.
-  // This prevents multiple instances (e.g. home hero + other overlays) from appearing to open "twice".
   useEffect(() => {
     if (!isOpen) return;
     if (activeDropdownCloser && activeDropdownCloser !== closeDropdown) activeDropdownCloser();
@@ -92,7 +129,6 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
     };
   }, [closeDropdown, isOpen]);
 
-  // Close dropdown when clicking outside / pressing Escape.
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -111,8 +147,6 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
   }, [closeDropdown]);
 
   const handleSelect = (item: LocationResult) => {
-    // Use a more descriptive query value so downstream property search can match better.
-    // Example: "Ghanta Ghar, Kanpur, Uttar Pradesh" instead of only "Ghanta Ghar".
     const parts = item.display_name.split(', ').filter(Boolean);
     const mainName = parts[0] ?? item.display_name;
     const context = parts.slice(1, 3).join(', ');
@@ -128,37 +162,39 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
   };
 
   const getIcon = (type?: string) => {
-    if (type === 'city') return <Building2 className="w-4 h-4 text-primary" />;
+    if (type === 'city' || type === 'administrative') return <Building2 className="w-4 h-4 text-primary" />;
     return <MapPin className="w-4 h-4 text-muted-foreground" />;
   };
 
   const showPanel = useMemo(() => {
     if (!isOpen) return false;
-    if (isLoading) return true;
+    if (isLoading || isDetecting) return true;
     if (errorMessage) return true;
     if (suggestions.length > 0) return true;
-    if (hasSearched && value.trim().length >= 3) return true;
+    if (!value && isOpen) return true; // Show detect location option
+    if (hasSearched && value.trim().length >= 2) return true;
     return false;
-  }, [errorMessage, hasSearched, isLoading, isOpen, suggestions.length, value]);
+  }, [errorMessage, hasSearched, isLoading, isDetecting, isOpen, suggestions.length, value]);
 
   return (
     <div className={cn("relative group", className)} ref={containerRef}>
       <div className="relative transition-all duration-300">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+        <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
           <Search className="w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
         </div>
         <Input
           type="text"
-          placeholder={placeholder || "Search locality, landmark, or city..."}
+          placeholder={placeholder || "Search city, area, or landmark..."}
           value={value}
           onChange={(e) => {
             onChange(e.target.value);
+            setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
-          className="pl-12 pr-12 h-14 bg-background border-border/50 shadow-sm hover:border-primary/50 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-base rounded-xl"
+          className="pl-14 pr-12 h-16 bg-background border-border/50 shadow-sm hover:border-primary/50 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-lg font-medium rounded-2xl"
         />
-        {isLoading ? (
-          <div className="absolute right-4 top-1/2 -translate-y-1/2">
+        {isLoading || isDetecting ? (
+          <div className="absolute right-5 top-1/2 -translate-y-1/2">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
           </div>
         ) : value && (
@@ -170,7 +206,7 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
               setErrorMessage(null);
               closeDropdown();
             }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-secondary rounded-full text-muted-foreground hover:text-foreground transition-colors"
+            className="absolute right-5 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -180,68 +216,76 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
       <AnimatePresence>
         {showPanel && (
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+            initial={{ opacity: 0, y: 15, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.98 }}
-            transition={{ duration: 0.2 }}
-            className="absolute z-50 w-full mt-2 bg-popover/95 backdrop-blur-xl text-popover-foreground rounded-xl border border-border/50 shadow-2xl overflow-hidden"
+            exit={{ opacity: 0, y: 15, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+            className="absolute z-50 w-full mt-3 bg-card border border-border/50 shadow-2xl rounded-[1.5rem] overflow-hidden backdrop-blur-xl"
           >
-            <div className="py-2">
-              <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                <span>Suggested Locations</span>
-                <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]">INDIA</span>
-              </div>
-              {meta.strategy === 'fallback_city' && (
-                <div className="px-4 pb-2 text-xs text-muted-foreground">
-                  No exact match. Showing results for {meta.fallbackCityQuery}.
+            <div className="p-2 space-y-1">
+              {!value && (
+                <button
+                  onClick={handleDetectLocation}
+                  disabled={isDetecting}
+                  className="w-full px-4 py-4 hover:bg-primary/5 text-primary text-sm font-bold flex items-center gap-4 transition-all group rounded-xl"
+                >
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {isDetecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Navigation className="w-5 h-5" />}
+                  </div>
+                  <div className="text-left">
+                    <p className="font-black tracking-tight">Detect My Location</p>
+                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest mt-0.5">Instant GPS Search</p>
+                  </div>
+                </button>
+              )}
+
+              {value && suggestions.length > 0 && (
+                <div className="px-4 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] flex items-center justify-between border-b border-border/30 mb-1">
+                  <span>Search Results</span>
+                  <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary">In India</Badge>
                 </div>
               )}
 
               {errorMessage ? (
-                <div className="px-4 py-3 text-sm text-destructive">{errorMessage}</div>
-              ) : isLoading ? (
-                <div className="px-4 py-3 text-sm text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Searching…
+                <div className="px-5 py-6 text-sm text-destructive font-bold text-center bg-destructive/5 rounded-xl m-2 italic">
+                  {errorMessage}
                 </div>
-              ) : suggestions.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-muted-foreground">No results found.</div>
+              ) : suggestions.length === 0 && value.length >= 2 && !isLoading ? (
+                <div className="px-5 py-6 text-sm text-muted-foreground font-medium text-center italic">
+                  No matches found for "{value}"
+                </div>
               ) : (
-                <ul className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                <ul className="max-h-[380px] overflow-y-auto custom-scrollbar px-1 pb-1">
                   {suggestions.map((item) => {
                     const parts = item.display_name.split(', ').filter(Boolean);
                     const mainName = parts[0] ?? item.display_name;
-                    const secondaryName = parts.slice(1).join(', ');
+                    const secondaryName = parts.slice(1, 4).join(', ');
 
                     return (
                       <li
                         key={item.place_id}
-                        className="px-4 py-3 hover:bg-primary/5 cursor-pointer flex items-start gap-3 transition-colors group/item border-b border-border/50 last:border-0"
+                        className="px-4 py-3.5 hover:bg-primary/5 cursor-pointer flex items-center gap-4 transition-all group/item rounded-xl"
                         onClick={() => handleSelect(item)}
                       >
-                        <div className="mt-1 p-2 bg-secondary rounded-full group-hover/item:bg-primary/10 transition-colors">
+                        <div className="w-12 h-12 flex-shrink-0 bg-muted/50 rounded-2xl flex items-center justify-center border border-border/50 group-hover/item:bg-primary/10 group-hover/item:border-primary/20 transition-all group-hover/item:scale-105">
                           {getIcon(item.type)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-foreground truncate group-hover/item:text-primary transition-colors">
+                          <p className="font-bold text-base text-foreground truncate group-hover/item:text-primary transition-colors tracking-tight">
                             {mainName}
                           </p>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">{secondaryName}</p>
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5 font-medium">{secondaryName}</p>
                         </div>
-                        <div className="mt-2 opacity-0 group-hover/item:opacity-100 transition-opacity -translate-x-2 group-hover/item:translate-x-0 duration-300">
-                          <Navigation className="w-3 h-3 text-primary -rotate-45" />
+                        <div className="opacity-0 group-hover/item:opacity-100 transition-all -translate-x-2 group-hover/item:translate-x-0">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Navigation className="w-3.5 h-3.5 text-primary -rotate-45" />
+                          </div>
                         </div>
                       </li>
                     );
                   })}
                 </ul>
               )}
-            </div>
-            <div className="bg-muted/30 px-4 py-2 text-[10px] text-muted-foreground border-t flex items-center justify-between">
-              <span className="flex items-center gap-1">
-                Powered by <span className="font-semibold">OpenStreetMap</span>
-              </span>
-              <span>{suggestions.length} results found</span>
             </div>
           </motion.div>
         )}

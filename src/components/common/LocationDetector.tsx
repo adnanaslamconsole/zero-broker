@@ -3,13 +3,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { MapPin, Navigation } from 'lucide-react';
 import { toast } from 'sonner';
+import { getItemWithTTL, setItemWithTTL } from '@/lib/localStorageTTL';
 
 export function LocationDetector() {
   const [isOpen, setIsOpen] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
 
   useEffect(() => {
-    const hasDetected = localStorage.getItem('location_detected');
+    const hasDetected = getItemWithTTL<string | boolean>('location_detected');
     if (!hasDetected) {
       // Small delay to not be intrusive immediately
       const timer = setTimeout(() => setIsOpen(true), 1500);
@@ -37,10 +38,10 @@ export function LocationDetector() {
           const data = await res.json();
           const city = data.address.city || data.address.town || data.address.village || 'Unknown Location';
           
-          localStorage.setItem('location_detected', 'true');
-          localStorage.setItem('user_city', city);
-          localStorage.setItem('user_lat', latitude.toString());
-          localStorage.setItem('user_lng', longitude.toString());
+          setItemWithTTL('location_detected', 'true', 60); // 60 minutes TTL
+          setItemWithTTL('user_city', city, 60);
+          setItemWithTTL('user_lat', latitude.toString(), 60);
+          setItemWithTTL('user_lng', longitude.toString(), 60);
           
           toast.success(`Location detected: ${city}`);
           setIsOpen(false);
@@ -59,13 +60,21 @@ export function LocationDetector() {
         toast.error('Location access denied. Please search manually.');
         setIsDetecting(false);
         setIsOpen(false); // Close anyway
-        localStorage.setItem('location_detected', 'skipped');
+        setItemWithTTL('location_detected', 'skipped', 60);
       }
     );
   };
 
+  const handleManual = () => {
+    setItemWithTTL('location_detected', 'skipped', 60);
+    setIsOpen(false);
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) handleManual();
+      setIsOpen(open);
+    }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="mx-auto bg-primary/10 p-3 rounded-full w-fit mb-4">
@@ -86,7 +95,7 @@ export function LocationDetector() {
               </>
             )}
           </Button>
-          <Button variant="ghost" onClick={() => setIsOpen(false)} className="text-muted-foreground">
+          <Button variant="ghost" onClick={handleManual} className="text-muted-foreground">
             I'll search manually
           </Button>
         </div>

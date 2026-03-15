@@ -41,6 +41,8 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -51,18 +53,40 @@ import { offlineStorage } from '@/lib/offlineStorage';
 
 // Form Schema
 const propertySchema = z.object({
-  title: z.string().min(5, 'Title must be at least 5 characters'),
-  description: z.string().min(20, 'Description must be at least 20 characters'),
-  type: z.enum(['rent', 'sale', 'pg', 'commercial']),
-  property_category: z.string().min(1, 'Property category is required'),
-  price: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, 'Price must be a positive number'),
-  city: z.string().min(1, 'City is required'),
-  locality: z.string().min(1, 'Locality is required'),
-  address: z.string().min(5, 'Address is required'),
-  bedrooms: z.string().transform((val) => Number(val)).optional(),
-  bathrooms: z.string().transform((val) => Number(val)).optional(),
-  area: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, 'Area must be a positive number'),
-  furnishing_status: z.enum(['furnished', 'semi-furnished', 'unfurnished']),
+  title: z.string()
+    .min(1, 'Please enter a catchy title for your property')
+    .min(5, 'Title is too short (minimum 10 characters recommended)')
+    .max(100, 'Title is too long (maximum 100 characters)'),
+  description: z.string()
+    .min(1, 'Please provide a detailed description of your property')
+    .min(20, 'Description is too brief. Mention features, neighborhood, etc.')
+    .max(2000, 'Description exceeds 2000 characters'),
+  type: z.enum(['rent', 'sale', 'pg', 'commercial'], {
+    required_error: 'Please select whether you want to Rent, Sell, or list as PG',
+  }),
+  property_category: z.string().min(1, 'Please select a property category (e.g. Apartment, Villa)'),
+  price: z.string()
+    .min(1, 'Expected price or rent is required')
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, 'Price must be a valid positive amount (e.g. 25000)'),
+  city: z.string().min(1, 'City is required for location tagging'),
+  locality: z.string().min(1, 'Locality or landmark is required to help tenants find you'),
+  address: z.string()
+    .min(1, 'Full address is required for verification')
+    .min(5, 'Please provide a more complete address'),
+  bedrooms: z.string()
+    .transform((val) => Number(val))
+    .refine(val => val >= 1, 'Mention at least 1 bedroom (or use 0 for studio)')
+    .optional(),
+  bathrooms: z.string()
+    .transform((val) => Number(val))
+    .refine(val => val >= 1, 'Mention at least 1 bathroom')
+    .optional(),
+  area: z.string()
+    .min(1, 'Carpet area is required')
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, 'Area must be a positive number in sq.ft'),
+  furnishing_status: z.enum(['furnished', 'semi-furnished', 'unfurnished'], {
+    required_error: 'Please select the furnishing status',
+  }),
   amenities: z.array(z.string()).optional(),
 });
 
@@ -238,9 +262,11 @@ export default function PostProperty() {
     setUploadingImages(true);
 
     try {
-      for (const file of uploadedImages) {
+      console.log(`Starting upload for ${uploadedImages.length} images...`);
+      for (const [index, file] of uploadedImages.entries()) {
+        console.log(`Uploading image ${index + 1}/${uploadedImages.length}: ${file.name}`);
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
         const filePath = `${user?.profile.id}/${fileName}`;
 
         const { error: uploadError, data } = await supabase.storage
@@ -248,6 +274,7 @@ export default function PostProperty() {
           .upload(filePath, file);
 
         if (uploadError) {
+          console.error(`Upload error for file ${file.name}:`, uploadError);
           if (uploadError.message?.includes('Bucket not found')) {
             throw new Error("Storage bucket 'property-images' not found. Please create it in your Supabase dashboard.");
           }
@@ -258,11 +285,13 @@ export default function PostProperty() {
           .from('property-images')
           .getPublicUrl(data.path);
 
+        console.log(`Upload success for file ${file.name}. URL: ${publicUrlData.publicUrl}`);
         urls.push(publicUrlData.publicUrl);
       }
     } catch (error) {
-      console.error('Error uploading images:', error);
-      toast.error('Failed to upload images');
+      console.error('Fatal error in uploadImagesToStorage:', error);
+      toast.error('Failed to upload images. Please try again.');
+      throw error; // Rethrow to let onSubmit handle it
     } finally {
       setUploadingImages(false);
     }
@@ -271,7 +300,9 @@ export default function PostProperty() {
   };
 
   const onSubmit = async (data: PropertyFormValues) => {
+    console.log('onSubmit triggered with data:', data);
     if (!user) {
+      console.error('Submission failed: No user found');
       toast.error('You must be logged in to post a property');
       navigate('/login');
       return;
@@ -279,34 +310,39 @@ export default function PostProperty() {
 
     // Validation for photos in the final step
     if (uploadedImages.length === 0 && !user.profile.isDemo) {
+      console.warn('Submission blocked: No images uploaded');
       toast.error('Please upload at least one property photo');
       return;
     }
 
+    console.log('Setting isSubmitting to true');
     setIsSubmitting(true);
 
+    // Safeguard timeout to reset 'Posting' state if something hangs indefinitely
+    const submissionTimeout = setTimeout(() => {
+      console.error('CRITICAL: Submission timed out after 60 seconds');
+      setIsSubmitting(false);
+      toast.error('Posting is taking longer than expected. Please check your internet and try again.');
+    }, 60000);
+
     try {
-      console.log('Starting submission for user:', user.profile.id);
+      console.log('Starting submission flow for user:', user.profile.id);
+      console.log('Step 1: Uploading images...');
       const uploadedUrls = await uploadImagesToStorage();
-      console.log('Images uploaded:', uploadedUrls);
+      console.log('Step 1 Complete: Images uploaded:', uploadedUrls);
 
       // Handle non-paid demo user submission (mock only)
       if (user.profile.isDemo && !user.profile.isPaid) {
-        console.log('Free demo user submission detected');
+        console.log('Demo mode detected (Free), simulating delay...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         toast.success('Demo Property posted successfully!');
-        
-        // Use a small delay before navigation to ensure toast is visible
-        setTimeout(() => {
-          navigate('/properties');
-        }, 500);
+        clearTimeout(submissionTimeout);
+        navigate('/properties');
         return;
       }
 
-      // Paid demo user (paid-owner@demo.com) will proceed to real insert
-      console.log('Proceeding with real insert for user:', user.profile.id);
-
-      const { error } = await supabase.from('properties').insert({
+      console.log('Step 2: Inserting property into Supabase...');
+      const propertyPayload = {
         owner_id: user.profile.id,
         title: data.title,
         description: data.description,
@@ -318,35 +354,53 @@ export default function PostProperty() {
         address: data.address,
         bedrooms: data.bedrooms,
         bathrooms: data.bathrooms,
-        area: Math.round(Number(data.area)), // Rounding to integer for DB compatibility
+        area: Math.round(Number(data.area)),
         furnishing_status: data.furnishing_status,
         amenities: data.amenities || [],
         images: uploadedUrls,
+        status: 'active',
         verification_status: 'pending',
         is_available: true,
         is_verified: false,
         latitude: selectedLocation?.lat,
         longitude: selectedLocation?.lon,
-      });
+      };
+      
+      console.log('Payload:', propertyPayload);
+      
+      const { error, data: insertedData } = await supabase
+        .from('properties')
+        .insert(propertyPayload)
+        .select()
+        .single();
 
       if (error) {
+        console.error('Step 2 Failed: Database error:', error);
         logError(error, { action: 'property.create' });
         throw new Error(getUserFriendlyErrorMessage(error, { action: 'property.create' }) || 'Failed to post property');
       }
 
+      console.log('Step 2 Complete: Property inserted:', insertedData);
+      console.log('Step 3: Invalidating caches and clearing draft...');
+      
       toast.success('Property posted successfully!');
       
-      // Invalidate queries to update property counts
       queryClient.invalidateQueries({ queryKey: ['subscription-limits'] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['owner-properties'] });
 
-      offlineStorage.clearDraft(); // Clear draft after successful post
+      offlineStorage.clearDraft();
+      console.log('Step 3 Complete. Navigating...');
+      
+      clearTimeout(submissionTimeout);
       navigate('/properties');
     } catch (error) {
+      console.error('CATCH: Submission process failed:', error);
+      clearTimeout(submissionTimeout);
       logError(error, { action: 'property.create' });
       toast.error(getUserFriendlyErrorMessage(error, { action: 'property.create' }) || 'Failed to post property');
     } finally {
+      console.log('FINALLY: Submission flow finished. Setting isSubmitting to false');
       setIsSubmitting(false);
     }
   };
@@ -376,95 +430,99 @@ export default function PostProperty() {
   };
 
   return (
-    <div className="min-h-screen bg-secondary/30 pb-20 pt-24">
+    <div className="min-h-screen bg-gradient-to-b from-secondary/30 to-background pb-28 pt-24">
       <div className="container mx-auto px-4 max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-display font-bold text-foreground">Post Your Property</h1>
-          <p className="text-muted-foreground mt-2">List your property for free and connect with genuine tenants/buyers.</p>
+        <div className="mb-10 text-center sm:text-left">
+          <Badge variant="outline" className="mb-3 px-3 py-1 bg-primary/5 text-primary border-primary/20 text-[10px] font-black uppercase tracking-widest">Listing Portal</Badge>
+          <h1 className="text-3xl sm:text-5xl font-display font-black text-foreground antialiased tracking-tight">Post Your Property</h1>
+          <p className="text-muted-foreground mt-2 text-sm sm:text-lg font-medium max-w-2xl">Connect with thousands of verified tenants directly without middleman charges.</p>
         </div>
 
         {/* Subscription Limits Alert */}
         {!!user && !isLoadingSubscription && (
-          <div className="mb-8">
+          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-500">
             {hasNoPlan ? (
-              <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No Active Plan</AlertTitle>
-                <AlertDescription className="flex items-center justify-between mt-2">
-                  <span>You need an active plan to post properties.</span>
-                  <Button variant="destructive" size="sm" onClick={() => navigate('/plans')}>
-                    View Plans
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Crown className="w-4 h-4 text-primary" />
-                    <span className="font-semibold text-sm">
-                      Current Plan: {subscriptionInfo?.plan?.name}
-                    </span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {usedListings} / {maxListings} listings used
-                  </span>
+              <div className="bg-destructive/5 border-2 border-dashed border-destructive/20 rounded-3xl p-8 flex flex-col items-center text-center gap-4">
+                <div className="p-4 bg-destructive/10 rounded-full text-destructive"><AlertCircle className="h-8 w-8" /></div>
+                <div className="space-y-1">
+                  <h3 className="text-xl font-black tracking-tight text-foreground">No Active Plan Found</h3>
+                  <p className="text-muted-foreground text-sm font-medium">You need an active subscription to list properties on Zero Broker.</p>
                 </div>
-                <Progress value={(usedListings / maxListings) * 100} className="h-2 mb-2" />
-                {isLimitReached ? (
-                  <div className="flex flex-col gap-4 mt-2">
-                    <div className="flex items-center justify-between text-sm text-destructive bg-destructive/5 p-2 rounded">
-                      <span className="flex items-center gap-2 font-medium">
-                        <AlertCircle className="w-4 h-4" />
-                        Limit Reached
-                      </span>
-                      <Link to="/plans" className="underline hover:text-destructive/80">
-                        Upgrade to post more
-                      </Link>
+                <Button variant="destructive" size="lg" onClick={() => navigate('/plans')} className="px-8 h-12 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-destructive/20">
+                  Upgrade My Account
+                </Button>
+              </div>
+            ) : (
+              <div className="bg-card/50 backdrop-blur-xl border border-border/50 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                  <Crown className="w-24 h-24 rotate-12" />
+                </div>
+                <div className="relative z-10 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-primary/10 rounded-xl text-primary"><Crown className="w-5 h-5" /></div>
+                      <div>
+                        <h4 className="font-black text-lg tracking-tight">{subscriptionInfo?.plan?.name} Plan Active</h4>
+                        <p className="text-xs text-muted-foreground font-medium">{maxListings - usedListings} listing slots remaining</p>
+                      </div>
                     </div>
-                    <Button 
-                      variant="outline" 
-                      className="w-full border-primary text-primary hover:bg-primary/5"
-                      onClick={() => navigate('/plans')}
-                    >
-                      <Crown className="w-4 h-4 mr-2" />
-                      View Upgrade Plans
-                    </Button>
+                    {isLimitReached && (
+                      <Button variant="outline" size="sm" onClick={() => navigate('/plans')} className="w-full sm:w-auto h-10 rounded-xl font-bold bg-background shadow-sm hover:shadow-md transition-all">
+                        Upgrade To Plus
+                      </Button>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    You can post {maxListings - usedListings} more properties.
-                  </p>
-                )}
+                  <div className="space-y-1.5">
+                    <Progress value={(usedListings / maxListings) * 100} className="h-2.5 rounded-full bg-secondary" />
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                      <span>Used: {usedListings}</span>
+                      <span>Total: {maxListings}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Steps Indicator */}
+        {/* Steps Indicator - Premium Redesign */}
         {!isLimitReached && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between relative">
-              <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-border -z-10" />
+          <div className="mb-12 relative px-4">
+            <div className="absolute left-10 right-10 top-5 h-0.5 bg-border -z-10 hidden sm:block" />
+            <div className="flex items-center justify-between">
               {steps.map((step) => (
                 <div 
                   key={step.id}
-                  className={`flex flex-col items-center gap-2 bg-background px-4 ${
-                    step.id <= currentStep ? 'text-primary' : 'text-muted-foreground'
-                  }`}
+                  className={cn(
+                    "flex flex-col items-center gap-3 transition-all duration-500",
+                    step.id <= currentStep ? "opacity-100 scale-100" : "opacity-40 scale-95"
+                  )}
                 >
                   <div 
-                    className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                    className={cn(
+                      "w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 relative",
                       step.id < currentStep 
-                        ? 'bg-primary border-primary text-primary-foreground'
+                        ? "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/20"
                         : step.id === currentStep
-                        ? 'border-primary text-primary bg-background'
-                        : 'border-muted text-muted-foreground bg-background'
-                    }`}
+                        ? "bg-background border-primary text-primary shadow-xl shadow-primary/10"
+                        : "bg-secondary/30 border-transparent text-muted-foreground"
+                    )}
                   >
-                    {step.id < currentStep ? <CheckCircle2 className="w-6 h-6" /> : <step.icon className="w-5 h-5" />}
+                    {step.id < currentStep ? (
+                      <CheckCircle2 className="w-6 h-6" />
+                    ) : (
+                      <step.icon className="w-5 h-5" />
+                    )}
+                    {step.id === currentStep && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full animate-ping" />
+                    )}
                   </div>
-                  <span className="text-sm font-medium hidden sm:block">{step.title}</span>
+                  <span className={cn(
+                    "text-[10px] font-black uppercase tracking-widest hidden sm:block",
+                    step.id === currentStep ? "text-primary" : "text-muted-foreground"
+                  )}>
+                    {step.title}
+                  </span>
                 </div>
               ))}
             </div>
@@ -472,39 +530,44 @@ export default function PostProperty() {
         )}
 
         {!isLimitReached ? (
-          <Card className="border-border/50 shadow-lg">
-            <CardContent className="p-6 sm:p-8">
+          <Card className="border-border/40 shadow-2xl shadow-primary/5 rounded-[2.5rem] overflow-hidden bg-card/80 backdrop-blur-md">
+            <CardContent className="p-8 sm:p-12">
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-10">
                   {/* Step 1: Basic Info */}
                   {currentStep === 1 && (
                     <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-6"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      className="space-y-8"
                     >
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-1">
+                        <h2 className="text-2xl font-black tracking-tight text-primary">Basic Information</h2>
+                        <p className="text-muted-foreground text-sm font-medium">Start with the essentials. What are you listing?</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <FormField
                           control={form.control}
                           name="type"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>I want to</FormLabel>
+                            <FormItem className="space-y-3">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Purpose of Listing <span className="text-destructive">*</span></FormLabel>
                               <Select onValueChange={field.onChange} defaultValue={field.value}>
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="h-14 rounded-2xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-bold">
                                     <SelectValue placeholder="Select type" />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="rent">Rent Out</SelectItem>
-                                  <SelectItem value="sale">Sell</SelectItem>
-                                  <SelectItem value="pg">List as PG</SelectItem>
-                                  <SelectItem value="commercial">List Commercial</SelectItem>
+                                <SelectContent className="rounded-2xl p-2">
+                                  <SelectItem value="rent" className="rounded-xl py-3 font-bold">Rent Out</SelectItem>
+                                  <SelectItem value="sale" className="rounded-xl py-3 font-bold">Sell</SelectItem>
+                                  <SelectItem value="pg" className="rounded-xl py-3 font-bold">List as PG</SelectItem>
+                                  <SelectItem value="commercial" className="rounded-xl py-3 font-bold">List Commercial</SelectItem>
                                 </SelectContent>
                               </Select>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -513,23 +576,23 @@ export default function PostProperty() {
                           control={form.control}
                           name="property_category"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Property Type</FormLabel>
+                            <FormItem className="space-y-3">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Property Category <span className="text-destructive">*</span></FormLabel>
                               <Select onValueChange={field.onChange} defaultValue={field.value}>
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="h-14 rounded-2xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-bold">
                                     <SelectValue placeholder="Select category" />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="apartment">Apartment</SelectItem>
-                                  <SelectItem value="villa">Villa / House</SelectItem>
-                                  <SelectItem value="plot">Plot / Land</SelectItem>
-                                  <SelectItem value="office">Office Space</SelectItem>
-                                  <SelectItem value="shop">Shop / Showroom</SelectItem>
+                                <SelectContent className="rounded-2xl p-2">
+                                  <SelectItem value="apartment" className="rounded-xl py-3 font-bold">Apartment</SelectItem>
+                                  <SelectItem value="villa" className="rounded-xl py-3 font-bold">Villa / House</SelectItem>
+                                  <SelectItem value="plot" className="rounded-xl py-3 font-bold">Plot / Land</SelectItem>
+                                  <SelectItem value="office" className="rounded-xl py-3 font-bold">Office Space</SelectItem>
+                                  <SelectItem value="shop" className="rounded-xl py-3 font-bold">Shop / Showroom</SelectItem>
                                 </SelectContent>
                               </Select>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -539,15 +602,19 @@ export default function PostProperty() {
                         control={form.control}
                         name="title"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Property Title</FormLabel>
+                          <FormItem className="space-y-3">
+                            <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Property Title <span className="text-destructive">*</span></FormLabel>
                             <FormControl>
-                              <Input placeholder="e.g. 2 BHK Apartment in Koramangala" {...field} />
+                              <Input 
+                                placeholder="e.g. 2 BHK Ultra Luxury Garden View Apartment" 
+                                className="h-14 rounded-2xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-bold px-6"
+                                {...field} 
+                              />
                             </FormControl>
-                            <FormDescription>
-                              A catchy title attracts more views.
+                            <FormDescription className="text-[10px] font-medium italic">
+                              * A descriptive title gets 40% more engagement.
                             </FormDescription>
-                            <FormMessage />
+                            <FormMessage className="text-[10px] font-bold" />
                           </FormItem>
                         )}
                       />
@@ -556,16 +623,16 @@ export default function PostProperty() {
                         control={form.control}
                         name="description"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Description</FormLabel>
+                          <FormItem className="space-y-3">
+                            <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Property Description <span className="text-destructive">*</span></FormLabel>
                             <FormControl>
                               <Textarea 
-                                placeholder="Describe your property (amenities, nearby landmarks, etc.)" 
-                                className="min-h-[120px]"
+                                placeholder="Describe the soul of your property. Mention highlights like Vastu compliance, morning sun, quiet neighborhood, or premium fittings." 
+                                className="min-h-[160px] rounded-3xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-medium p-6 resize-none"
                                 {...field} 
                               />
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-[10px] font-bold" />
                           </FormItem>
                         )}
                       />
@@ -575,18 +642,23 @@ export default function PostProperty() {
                   {/* Step 2: Location */}
                   {currentStep === 2 && (
                     <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-6"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      className="space-y-8"
                     >
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-1">
+                        <h2 className="text-2xl font-black tracking-tight">Location Details</h2>
+                        <p className="text-muted-foreground text-sm font-medium">Where is your property located?</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <FormField
                           control={form.control}
                           name="city"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>City</FormLabel>
+                            <FormItem className="space-y-3">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Select City <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
                                 <LocationSearch 
                                   value={field.value} 
@@ -596,7 +668,7 @@ export default function PostProperty() {
                                   }}
                                 />
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -605,12 +677,16 @@ export default function PostProperty() {
                           control={form.control}
                           name="locality"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Locality / Area</FormLabel>
+                            <FormItem className="space-y-3">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Locality / Area <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
-                                <Input placeholder="e.g. HSR Layout" {...field} />
+                                <Input 
+                                  placeholder="e.g. Near Central Park" 
+                                  className="h-14 rounded-2xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-bold px-6"
+                                  {...field} 
+                                />
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -620,12 +696,16 @@ export default function PostProperty() {
                         control={form.control}
                         name="address"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Full Address</FormLabel>
+                          <FormItem className="space-y-3">
+                            <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Full Address <span className="text-destructive">*</span></FormLabel>
                             <FormControl>
-                              <Textarea placeholder="Enter full address" {...field} />
+                              <Textarea 
+                                placeholder="Enter house number, building name, street, etc." 
+                                className="min-h-[120px] rounded-3xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-medium p-6 resize-none"
+                                {...field} 
+                              />
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-[10px] font-bold" />
                           </FormItem>
                         )}
                       />
@@ -635,22 +715,30 @@ export default function PostProperty() {
                   {/* Step 3: Details */}
                   {currentStep === 3 && (
                     <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-6"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      className="space-y-8"
                     >
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="space-y-1">
+                        <h2 className="text-2xl font-black tracking-tight">Internal Specifications</h2>
+                        <p className="text-muted-foreground text-sm font-medium">BHK configuration, area and furnishing status.</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
                         <FormField
                           control={form.control}
                           name="bedrooms"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Bedrooms (BHK)</FormLabel>
+                            <FormItem className="space-y-3">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total Bedrooms <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
-                                <Input type="number" placeholder="2" {...field} />
+                                <div className="relative">
+                                  <Home className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                                  <Input type="number" className="h-14 rounded-2xl border-border/50 bg-background/50 pl-12 font-bold" placeholder="2" {...field} />
+                                </div>
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -659,12 +747,15 @@ export default function PostProperty() {
                           control={form.control}
                           name="bathrooms"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Bathrooms</FormLabel>
+                            <FormItem className="space-y-3">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total Bathrooms <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
-                                <Input type="number" placeholder="2" {...field} />
+                                <div className="relative">
+                                  <div className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50 flex items-center justify-center">🛁</div>
+                                  <Input type="number" className="h-14 rounded-2xl border-border/50 bg-background/50 pl-12 font-bold" placeholder="2" {...field} />
+                                </div>
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -673,12 +764,12 @@ export default function PostProperty() {
                           control={form.control}
                           name="area"
                           render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Carpet Area (sq.ft)</FormLabel>
+                            <FormItem className="space-y-3 col-span-2 lg:col-auto">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Carpet Area (sq.ft) <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
-                                <Input type="number" placeholder="1200" {...field} />
+                                <Input type="number" className="h-14 rounded-2xl border-border/50 bg-background/50 px-6 font-bold" placeholder="1200" {...field} />
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-[10px] font-bold" />
                             </FormItem>
                           )}
                         />
@@ -688,21 +779,21 @@ export default function PostProperty() {
                         control={form.control}
                         name="furnishing_status"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Furnishing Status</FormLabel>
+                          <FormItem className="space-y-3">
+                            <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Furnishing Status <span className="text-destructive">*</span></FormLabel>
                             <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <FormControl>
-                                <SelectTrigger>
+                                <SelectTrigger className="h-14 rounded-2xl border-border/50 bg-background/50 focus:ring-primary/20 transition-all font-bold">
                                   <SelectValue placeholder="Select status" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
-                                <SelectItem value="furnished">Fully Furnished</SelectItem>
-                                <SelectItem value="semi-furnished">Semi Furnished</SelectItem>
-                                <SelectItem value="unfurnished">Unfurnished</SelectItem>
+                              <SelectContent className="rounded-2xl p-2">
+                                <SelectItem value="furnished" className="rounded-xl py-3 font-bold">Fully Furnished</SelectItem>
+                                <SelectItem value="semi-furnished" className="rounded-xl py-3 font-bold">Semi Furnished</SelectItem>
+                                <SelectItem value="unfurnished" className="rounded-xl py-3 font-bold">Unfurnished</SelectItem>
                               </SelectContent>
                             </Select>
-                            <FormMessage />
+                            <FormMessage className="text-[10px] font-bold" />
                           </FormItem>
                         )}
                       />
@@ -711,14 +802,14 @@ export default function PostProperty() {
                         control={form.control}
                         name="amenities"
                         render={() => (
-                          <FormItem>
-                            <div className="mb-4">
-                              <FormLabel className="text-base">Amenities</FormLabel>
-                              <FormDescription>
-                                Select the amenities available at your property.
+                          <FormItem className="space-y-6">
+                            <div className="space-y-1">
+                              <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Amenities & Perks</FormLabel>
+                              <FormDescription className="text-[10px] font-medium italic">
+                                Select all that apply to highlight your property's value.
                               </FormDescription>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                               {amenitiesList.map((item) => (
                                 <FormField
                                   key={item}
@@ -728,7 +819,7 @@ export default function PostProperty() {
                                     return (
                                       <FormItem
                                         key={item}
-                                        className="flex flex-row items-start space-x-3 space-y-0"
+                                        className="flex flex-row items-center space-x-3 space-y-0 p-4 rounded-2xl border border-border/50 bg-background/50 hover:bg-primary/5 transition-colors cursor-pointer group"
                                       >
                                         <FormControl>
                                           <Checkbox
@@ -742,9 +833,10 @@ export default function PostProperty() {
                                                     )
                                                   )
                                             }}
+                                            className="w-5 h-5 rounded-lg border-2 border-primary/20 data-[state=checked]:bg-primary"
                                           />
                                         </FormControl>
-                                        <FormLabel className="font-normal">
+                                        <FormLabel className="text-xs font-bold text-muted-foreground group-data-[state=checked]:text-primary cursor-pointer">
                                           {item}
                                         </FormLabel>
                                       </FormItem>
@@ -753,7 +845,7 @@ export default function PostProperty() {
                                 />
                               ))}
                             </div>
-                            <FormMessage />
+                            <FormMessage className="text-[10px] font-bold" />
                           </FormItem>
                         )}
                       />
@@ -763,82 +855,136 @@ export default function PostProperty() {
                   {/* Step 4: Pricing & Photos */}
                   {currentStep === 4 && (
                     <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-6"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      className="space-y-10"
                     >
+                      <div className="space-y-1">
+                        <h2 className="text-2xl font-black tracking-tight">Financials & Media</h2>
+                        <p className="text-muted-foreground text-sm font-medium">Set your price and showcase your property with photos.</p>
+                      </div>
+
                       <FormField
                         control={form.control}
                         name="price"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Expected Price / Rent (₹)</FormLabel>
+                          <FormItem className="space-y-3">
+                            <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Expected Price / Rent (₹)</FormLabel>
                             <FormControl>
-                              <div className="relative">
-                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                <Input type="number" className="pl-9" placeholder="25000" {...field} />
+                              <div className="relative group">
+                                <div className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center text-primary font-black transition-all group-focus-within:bg-primary group-focus-within:text-white">₹</div>
+                                <Input 
+                                  type="number" 
+                                  className="h-20 rounded-3xl border-border/50 bg-background/50 pl-20 pr-8 text-3xl font-black tracking-tighter transition-all focus:ring-primary/20" 
+                                  placeholder="0" 
+                                  {...field} 
+                                />
                               </div>
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-[10px] font-bold" />
                           </FormItem>
                         )}
                       />
 
-                      <div className="space-y-4">
-                        <FormLabel>Property Photos</FormLabel>
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                          <FormLabel className="text-xs font-black uppercase tracking-widest text-muted-foreground">Property Showcase</FormLabel>
+                          <span className="text-[10px] font-bold text-primary italic">Photos increase reach by 8x</span>
+                        </div>
+                        
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                           {imageUrls.map((url, index) => (
-                            <div key={index} className="relative group aspect-square rounded-lg overflow-hidden border border-border">
+                            <motion.div 
+                              layout
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              key={index} 
+                              className="relative group aspect-square rounded-[2rem] overflow-hidden border-2 border-border/50 shadow-inner"
+                            >
                               <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover" />
-                              <button
-                                type="button"
-                                onClick={() => removeImage(index)}
-                                className="absolute top-1 right-1 bg-destructive text-destructive-foreground p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeImage(index)}
+                                  className="bg-destructive text-destructive-foreground p-3 rounded-2xl hover:scale-110 transition-transform shadow-xl"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                              {index === 0 && (
+                                <Badge className="absolute top-3 left-3 bg-primary text-white text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg">Cover</Badge>
+                              )}
+                            </motion.div>
                           ))}
                           
-                          <label className="flex flex-col items-center justify-center aspect-square rounded-lg border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer">
-                            <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                            <span className="text-xs text-muted-foreground">Upload Photo</span>
-                            <input 
-                              type="file" 
-                              accept="image/*" 
-                              multiple 
-                              className="hidden" 
-                              onChange={handleImageUpload}
-                            />
-                          </label>
+                          {imageUrls.length < 10 && (
+                            <label className="aspect-square rounded-[2rem] border-2 border-dashed border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors flex flex-col items-center justify-center gap-3 cursor-pointer group">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={handleImageUpload}
+                                disabled={uploadingImages}
+                              />
+                              <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Upload className="w-6 h-6" />
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Upload</span>
+                            </label>
+                          )}
                         </div>
-                        <FormDescription>
-                          Upload at least 1 photo. Max 10 photos allowed.
-                        </FormDescription>
                       </div>
                     </motion.div>
                   )}
 
-                  {/* Navigation Buttons */}
-                  <div className="flex justify-between pt-6 border-t border-border">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={prevStep}
-                      disabled={currentStep === 1 || isSubmitting}
-                    >
-                      Previous
-                    </Button>
-                    
+                  {/* Form Footer Actions */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-10 border-t border-border/50">
+                    <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+                      {currentStep > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={prevStep}
+                          className="h-14 px-8 rounded-2xl font-black uppercase text-xs tracking-widest border-border/50 hover:bg-secondary/50 transition-all w-full sm:w-auto"
+                        >
+                          Back
+                        </Button>
+                      )}
+                      
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => navigate('/properties')}
+                        className="h-14 px-8 rounded-2xl font-black uppercase text-xs tracking-widest text-muted-foreground hover:text-foreground transition-all w-full sm:w-auto"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+
                     {currentStep < 4 ? (
-                      <Button type="button" onClick={nextStep}>
+                      <Button
+                        type="button"
+                        onClick={nextStep}
+                        className="h-14 px-12 rounded-2xl font-black uppercase text-xs tracking-widest bg-primary text-primary-foreground shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all w-full sm:w-auto interactive-hover"
+                      >
                         Next Step
                       </Button>
                     ) : (
-                      <Button type="submit" disabled={isSubmitting || uploadingImages || isLimitReached || hasNoPlan}>
-                        {(isSubmitting || uploadingImages) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                        Post Property
+                      <Button
+                        type="submit"
+                        disabled={isSubmitting || uploadingImages}
+                        className="h-14 px-12 rounded-2xl font-black uppercase text-xs tracking-widest bg-primary text-primary-foreground shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all w-full sm:w-auto interactive-hover"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Posting...
+                          </>
+                        ) : (
+                          'Publish Property'
+                        )}
                       </Button>
                     )}
                   </div>
@@ -847,33 +993,23 @@ export default function PostProperty() {
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-border/50 shadow-lg bg-muted/30">
-            <CardContent className="p-12 text-center">
-              <div className="flex flex-col items-center gap-4 max-w-md mx-auto">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                  <Crown className="w-8 h-8 text-primary" />
-                </div>
-                <h2 className="text-2xl font-bold">Listing Limit Reached</h2>
-                <p className="text-muted-foreground">
-                  Your current plan ({subscriptionInfo?.plan?.name}) allows up to {maxListings} active property listing{maxListings !== 1 ? 's' : ''}. You have already used {usedListings} of them.
-                </p>
-                <Button 
-                  size="lg"
-                  className="w-full mt-4 shadow-lg shadow-primary/20"
-                  onClick={() => navigate('/plans')}
-                >
-                  Upgrade Plan to Post More
-                </Button>
-                <Button 
-                  variant="link" 
-                  className="text-muted-foreground"
-                  onClick={() => navigate('/properties')}
-                >
-                  Manage My Properties
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="text-center py-20 bg-card/50 backdrop-blur-xl border border-border/50 rounded-[3rem] shadow-xl p-10 animate-in fade-in zoom-in duration-500">
+            <div className="w-24 h-24 bg-primary/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
+              <Crown className="w-12 h-12 text-primary" />
+            </div>
+            <h2 className="text-3xl font-black tracking-tight mb-4">You've hit the limit</h2>
+            <p className="text-muted-foreground max-w-sm mx-auto mb-10 font-medium">
+              You've used all available property slots on your current plan. Upgrade to a higher tier to keep listing properties.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button size="lg" onClick={() => navigate('/plans')} className="h-14 rounded-2xl px-10 font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20">
+                Upgrade My Account
+              </Button>
+              <Button size="lg" variant="outline" onClick={() => navigate('/profile')} className="h-14 rounded-2xl px-10 font-black uppercase text-xs tracking-widest border-border/50">
+                Back to Dashboard
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>
