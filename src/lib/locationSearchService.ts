@@ -34,13 +34,14 @@ const normalizeQuery = (q: string) => q.trim().replace(/\s+/g, ' ');
 const buildUrl = (q: string, limit: number) =>
   `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
     q
-  )}&limit=${limit}&addressdetails=1&countrycodes=in`;
+  )}&limit=${limit}&addressdetails=1&countrycodes=in&viewbox=68.1,6.8,97.4,35.5&bounded=0`;
 
 const fetchJson = async (url: string, signal?: AbortSignal) => {
   const res = await appFetch(url, {
     signal,
     headers: {
       'Accept-Language': 'en',
+      'User-Agent': 'ZeroBroker-App/1.0', // Good practice for Nominatim
     },
   });
 
@@ -48,21 +49,19 @@ const fetchJson = async (url: string, signal?: AbortSignal) => {
     throw new Error(`Location search failed (${res.status})`);
   }
 
-  return (await res.json()) as LocationResult[];
-};
-
-const extractFallbackCity = (q: string) => {
-  const tokens = q
-    .split(' ')
-    .map((t) => t.trim())
-    .filter(Boolean);
-  if (tokens.length < 2) return '';
-  return tokens[tokens.length - 1];
+  const data = (await res.json()) as LocationResult[];
+  
+  // Prioritize city and administrative results for broad queries
+  return data.sort((a, b) => {
+    const aIsCity = a.type === 'city' || a.type === 'administrative' ? 0 : 1;
+    const bIsCity = b.type === 'city' || b.type === 'administrative' ? 0 : 1;
+    return aIsCity - bIsCity;
+  });
 };
 
 export const searchLocations = async (query: string, signal?: AbortSignal) => {
   const normalized = normalizeQuery(query);
-  if (normalized.length < 3) {
+  if (normalized.length < 2) { // Lowered min length for better responsiveness
     return { results: [] as LocationResult[], meta: { strategy: 'none', queryUsed: normalized } as LocationSearchMeta };
   }
 
@@ -71,29 +70,38 @@ export const searchLocations = async (query: string, signal?: AbortSignal) => {
     return { results: cached.results, meta: cached.meta };
   }
 
-  const primaryUrl = buildUrl(normalized, 8);
-  const primaryResults = await fetchJson(primaryUrl, signal);
+  try {
+    const primaryUrl = buildUrl(normalized, 8);
+    const primaryResults = await fetchJson(primaryUrl, signal);
 
-  if (primaryResults.length > 0) {
-    const meta: LocationSearchMeta = { strategy: 'primary', queryUsed: normalized };
-    cache.set(normalized.toLowerCase(), { createdAt: Date.now(), results: primaryResults, meta });
-    return { results: primaryResults, meta };
+    if (primaryResults.length > 0) {
+      const meta: LocationSearchMeta = { strategy: 'primary', queryUsed: normalized };
+      cache.set(normalized.toLowerCase(), { createdAt: Date.now(), results: primaryResults, meta });
+      return { results: primaryResults, meta };
+    }
+
+    // Smart Fallback: Try searching for just the city if a full address fails
+    const tokens = normalized.split(',').map(t => t.trim()).filter(Boolean);
+    if (tokens.length > 1) {
+      const cityOnly = tokens[tokens.length - 1]; // Assume last part is city/state
+      const fallbackUrl = buildUrl(cityOnly, 6);
+      const fallbackResults = await fetchJson(fallbackUrl, signal);
+      
+      if (fallbackResults.length > 0) {
+        const meta: LocationSearchMeta = { strategy: 'fallback_city', queryUsed: normalized, fallbackCityQuery: cityOnly };
+        cache.set(normalized.toLowerCase(), { createdAt: Date.now(), results: fallbackResults, meta });
+        return { results: fallbackResults, meta };
+      }
+    }
+
+    const meta: LocationSearchMeta = { strategy: 'none', queryUsed: normalized };
+    cache.set(normalized.toLowerCase(), { createdAt: Date.now(), results: [], meta });
+    return { results: [], meta };
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') throw error;
+    console.error('Location search error:', error);
+    return { results: [], meta: { strategy: 'none', queryUsed: normalized } as LocationSearchMeta };
   }
-
-  const fallbackCity = extractFallbackCity(normalized);
-  if (fallbackCity) {
-    const fallbackUrl = buildUrl(fallbackCity, 6);
-    const fallbackResults = await fetchJson(fallbackUrl, signal);
-    const meta: LocationSearchMeta = fallbackResults.length
-      ? { strategy: 'fallback_city', queryUsed: normalized, fallbackCityQuery: fallbackCity }
-      : { strategy: 'none', queryUsed: normalized };
-    cache.set(normalized.toLowerCase(), { createdAt: Date.now(), results: fallbackResults, meta });
-    return { results: fallbackResults, meta };
-  }
-
-  const meta: LocationSearchMeta = { strategy: 'none', queryUsed: normalized };
-  cache.set(normalized.toLowerCase(), { createdAt: Date.now(), results: [], meta });
-  return { results: [], meta };
 };
 
 export const clearLocationSearchCache = () => {

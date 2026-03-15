@@ -62,6 +62,11 @@ export interface Property {
   ownerTrustScore?: number;
   ownerKycStatus?: 'unverified' | 'pending' | 'verified' | 'rejected';
   
+  // Bounty & Community Verification
+  bountyVerificationStatus?: 'pending' | 'community_vouched' | 'audit_failed';
+  bountyReward?: number;
+  communityTrustScore?: number;
+  
   // Analytics
   views: number;
   leads: number;

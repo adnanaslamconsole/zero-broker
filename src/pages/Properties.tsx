@@ -8,6 +8,7 @@ import {
   Grid3X3,
   List,
   Map as MapIcon,
+  Target,
   ChevronDown,
   X,
   Loader2,
@@ -17,6 +18,8 @@ import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import { PropertyMap } from '@/components/property/PropertyMap';
+import { BountyMap } from '@/components/property/BountyMap';
+import { VideoAuditPortal } from '@/components/property/VideoAuditPortal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +32,8 @@ import { supabase } from '@/lib/supabase';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { LocationAccessBanner } from '@/components/location/LocationAccessBanner';
 import type { Property, PropertyFilters, ListingType, PropertyType, FurnishingType } from '@/types/property';
+import { queryClient } from '@/lib/queryClient';
+import { getItemWithTTL, setItemWithTTL, removeItem } from '@/lib/localStorageTTL';
 
 const propertyTypes: { value: PropertyType; label: string }[] = [
   { value: 'apartment', label: 'Apartment' },
@@ -96,13 +101,16 @@ const transformProperty = (dbProperty: any): Property => ({
   views: 0,
   leads: 0,
   distanceKm: dbProperty.distance_km || undefined,
+  bountyVerificationStatus: dbProperty.bounty_verification_status,
+  bountyReward: dbProperty.bounty_reward, // Assuming we join or add to RPC
   createdAt: dbProperty.created_at,
   updatedAt: dbProperty.updated_at,
 });
 
 export default function Properties() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map' | 'bounty'>('grid');
+  const [selectedBounty, setSelectedBounty] = useState<Property | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [mapCenter, setMapCenter] = useState<[number, number]>([12.9716, 77.5946]); // Default Bangalore
@@ -132,6 +140,8 @@ export default function Properties() {
     minPrice: undefined,
     maxPrice: undefined,
   });
+
+  const [userCity, setUserCity] = useState<string | null>(getItemWithTTL<string>('user_city'));
 
   // Sync URL search params with filters state
   useEffect(() => {
@@ -179,16 +189,34 @@ export default function Properties() {
     hasNextPage,
     isFetchingNextPage,
     isLoading,
+    isRefetching,
   } = useInfiniteQuery({
-    queryKey: ['properties', filters, searchQuery, sortBy, userCoords, radiusKm, mapBounds, viewMode],
+    queryKey: [
+      'properties',
+      user?.profile?.id,
+      filters.listingType,
+      JSON.stringify(filters.propertyType),
+      JSON.stringify(filters.bhk),
+      JSON.stringify(filters.furnishing),
+      filters.minPrice,
+      filters.maxPrice,
+      searchQuery,
+      sortBy,
+      userCoords ? Number(userCoords.latitude.toFixed(4)) : null,
+      userCoords ? Number(userCoords.longitude.toFixed(4)) : null,
+      radiusKm,
+      viewMode === 'map' ? mapBounds?.sw : null,
+      viewMode,
+      userCity
+    ],
     queryFn: async ({ pageParam = 0 }) => {
       const PAGE_SIZE = viewMode === 'map' ? 100 : 9;
       const offset = typeof pageParam === 'number' ? pageParam : 0;
-      
+
       // Map view synchronization: If bounds are present and we're in map mode, filter by bounds
       if (viewMode === 'map' && mapBounds) {
         let query = supabase.from('properties').select('*', { count: 'exact' });
-        
+
         query = query
           .gte('latitude', mapBounds.sw[0])
           .lte('latitude', mapBounds.ne[0])
@@ -197,7 +225,7 @@ export default function Properties() {
 
         if (filters.listingType) query = query.eq('type', filters.listingType);
         if (filters.propertyType?.length) query = query.in('property_category', filters.propertyType);
-        
+
         const { data: boundData, count: boundCount, error: boundError } = await query
           .range(offset, offset + PAGE_SIZE - 1);
 
@@ -239,8 +267,7 @@ export default function Properties() {
       }
 
       // Fallback or default: Use the prioritized RPC
-      const userCity = localStorage.getItem('user_city');
-      const { data: prioritizedData, error: prioritizedError } = await supabase.rpc('get_properties_prioritized', {
+      let { data: prioritizedData, error: prioritizedError } = await supabase.rpc('get_properties_prioritized', {
         p_city: userCity || null,
         p_type: filters.listingType || null,
         p_category: filters.propertyType?.length ? filters.propertyType : null,
@@ -254,27 +281,50 @@ export default function Properties() {
         p_offset: offset
       });
 
+      // FALLBACK: If we have a city filter but it returns 0 results, try a global search
+      // to ensure the user doesn't see an empty page just because of their location.
+      if (!prioritizedError && (!prioritizedData || prioritizedData.length === 0) && userCity) {
+        console.log(`[Properties] No results for ${userCity}. Falling back to global search.`);
+        const { data: globalData, error: globalError } = await supabase.rpc('get_properties_prioritized', {
+          p_city: null, // Clear city for fallback
+          p_type: filters.listingType || null,
+          p_category: filters.propertyType?.length ? filters.propertyType : null,
+          p_bedrooms: filters.bhk?.length ? filters.bhk : null,
+          p_furnishing: filters.furnishing?.length ? filters.furnishing : null,
+          p_min_price: filters.minPrice || null,
+          p_max_price: filters.maxPrice || null,
+          p_search_query: searchQuery || null,
+          p_sort_by: sortBy,
+          p_limit: PAGE_SIZE,
+          p_offset: offset
+        });
+        
+        if (!globalError && globalData && globalData.length > 0) {
+          prioritizedData = globalData;
+        }
+      }
+
       if (prioritizedError) {
         // If RPC is missing or has a structure error, we can still fallback
         console.error('Error fetching prioritized properties:', prioritizedError);
-        
+
         // PGRST116: Function not found, 42804: Structure mismatch
         const isRpcError = prioritizedError.code === 'PGRST116' || prioritizedError.code === '42804' || prioritizedError.code === 'PGRST202';
-        
+
         if (!isRpcError) {
           throw prioritizedError;
         }
 
         // Fallback to regular query if RPC fails
         let query = supabase.from('properties').select('*', { count: 'exact' });
-        
+
         if (filters.listingType) query = query.eq('type', filters.listingType);
         if (filters.propertyType?.length) query = query.in('property_category', filters.propertyType);
         if (filters.bhk?.length) query = query.in('bedrooms', filters.bhk);
         if (filters.furnishing?.length) query = query.in('furnishing_status', filters.furnishing);
         if (filters.minPrice) query = query.gte('price', filters.minPrice);
         if (filters.maxPrice) query = query.lte('price', filters.maxPrice);
-        
+
         if (searchQuery) {
           query = query.or(`title.ilike.%${searchQuery}%,city.ilike.%${searchQuery}%,locality.ilike.%${searchQuery}%`);
         }
@@ -293,10 +343,10 @@ export default function Properties() {
           nextPage: (fallbackCount && offset + PAGE_SIZE < fallbackCount) ? offset + PAGE_SIZE : undefined,
         };
       }
-      
+
       const count = prioritizedData?.[0]?.total_count || 0;
       const nextOffset = offset + PAGE_SIZE;
-      
+
       return {
         properties: prioritizedData?.map(transformProperty) || [],
         nextPage: (count && nextOffset < count) ? nextOffset : undefined,
@@ -346,7 +396,7 @@ export default function Properties() {
   const toggleFilter = (key: keyof PropertyFilters, value: string | number) => {
     setFilters((prev) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const current = prev[key] as any[]; 
+      const current = prev[key] as any[];
       if (!current) return { ...prev, [key]: [value] };
       if (current.includes(value)) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -366,6 +416,15 @@ export default function Properties() {
       maxPrice: undefined,
     });
     setSearchQuery('');
+  };
+
+  const handleClearCity = () => {
+    removeItem('user_city');
+    removeItem('user_lat');
+    removeItem('user_lng');
+    removeItem('location_detected');
+    setUserCity(null);
+    queryClient.invalidateQueries({ queryKey: ['properties'] });
   };
 
   const activeFilterCount = useMemo(() => {
@@ -395,86 +454,75 @@ export default function Properties() {
               onRequest={requestLocation}
             />
           </div>
-          {/* Search Bar */}
-          <div className="bg-card rounded-xl border border-border p-3 sm:p-4 mb-4 sm:mb-6 relative z-20">
-            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
+          {/* Premium Search Experience */}
+          <div className="bg-card/50 backdrop-blur-2xl rounded-[2rem] border border-white/20 p-4 sm:p-5 mb-8 sm:mb-10 shadow-2xl relative z-20 group">
+            <div className="flex flex-col lg:flex-row gap-4 sm:gap-6">
               <div className="flex-1">
                 <LocationSearch
                   value={searchQuery}
                   onChange={setSearchQuery}
                   onLocationSelect={(loc) => {
                     setMapCenter([loc.lat, loc.lon]);
+                    // If it's a city search, we might want to center the map and perhaps clear radius if it was set
+                    if (viewMode !== 'map') setViewMode('map');
                   }}
+                  className="w-full"
                 />
               </div>
-              <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:gap-3">
+              
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
                 <Button
                   variant="outline"
-                  className="gap-2 h-10 sm:h-11"
+                  className="h-16 px-6 rounded-2xl border-border/50 bg-background/50 backdrop-blur-sm hover:bg-primary/5 hover:border-primary/30 transition-all gap-3 group/btn"
                   onClick={() => setShowFilters(!showFilters)}
                 >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  <span className="hidden xs:inline">Filters</span>
-                  <span className="xs:hidden">Filter</span>
+                  <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
+                    <SlidersHorizontal className="w-4 h-4 text-primary" />
+                  </div>
+                  <span className="font-bold tracking-tight">Advanced Filters</span>
                   {activeFilterCount > 0 && (
-                    <Badge variant="default" className="ml-1 px-1.5 min-w-[1.25rem]">
+                    <Badge className="bg-primary text-primary-foreground font-black px-2 py-0.5 rounded-lg text-[10px]">
                       {activeFilterCount}
                     </Badge>
                   )}
                 </Button>
-                
-                <div className="bg-background rounded-lg border border-input p-1 flex items-center justify-between sm:justify-start gap-1">
-                  <Button
-                    variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    className="h-8 w-8 flex-1 sm:flex-none"
-                    onClick={() => setViewMode('grid')}
-                  >
-                    <Grid3X3 className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    className="h-8 w-8 flex-1 sm:flex-none"
-                    onClick={() => setViewMode('list')}
-                  >
-                    <List className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'map' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    className="h-8 w-8 flex-1 sm:flex-none"
-                    onClick={() => setViewMode('map')}
-                  >
-                    <MapIcon className="w-4 h-4" />
-                  </Button>
+
+                <div className="bg-secondary/30 backdrop-blur-md rounded-2xl border border-border/30 p-1.5 flex items-center gap-1.5 h-16">
+                  {[
+                    { mode: 'grid', icon: Grid3X3 },
+                    { mode: 'list', icon: List },
+                    { mode: 'map', icon: MapIcon },
+                    { mode: 'bounty', icon: Target },
+                  ].map(({ mode, icon: Icon }) => (
+                    <Button
+                      key={mode}
+                      variant={viewMode === mode ? 'default' : 'ghost'}
+                      size="icon"
+                      className={cn(
+                        "h-12 w-12 rounded-xl transition-all duration-300",
+                        viewMode === mode 
+                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-105" 
+                          : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                      )}
+                      onClick={() => setViewMode(mode as any)}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </Button>
+                  ))}
                 </div>
 
-                <Button className="col-span-2 sm:col-auto gap-2 px-6 h-10 sm:h-11 order-first sm:order-none">
-                  <Search className="w-4 h-4" />
-                  Search
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="col-span-2 sm:col-auto h-10 sm:h-11"
-                  disabled={!user || saveSearchMutation.isPending}
-                  onClick={() => {
-                    const params = new URLSearchParams();
-                    if (filters.listingType) params.set('type', filters.listingType);
-                    if (filters.propertyType?.length) params.set('property', filters.propertyType.join(','));
-                    if (searchQuery) params.set('q', searchQuery);
-                    saveSearchMutation.mutate(params.toString());
-                  }}
+                <Button 
+                  className="h-16 px-10 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all bg-primary"
                 >
-                  Save search
+                  <Search className="w-4 h-4 mr-2" />
+                  Search
                 </Button>
               </div>
             </div>
 
-            {/* Listing Type Tabs & Geospatial Controls */}
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mt-4">
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full md:w-auto">
+            {/* Premium Category Toggle & Quick Actions */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 mt-8 pt-6 border-t border-border/30">
+              <div className="flex items-center gap-4 bg-muted/50 p-1.5 rounded-2xl border border-border/50 w-full md:w-auto">
                 {['rent', 'sale'].map((type) => (
                   <button
                     key={type}
@@ -484,39 +532,37 @@ export default function Properties() {
                         ...prev,
                         listingType: newType,
                       }));
-                      // Update URL
                       const params = new URLSearchParams(searchParams);
-                      if (newType) {
-                        params.set('type', newType);
-                      } else {
-                        params.delete('type');
-                      }
+                      if (newType) params.set('type', newType);
+                      else params.delete('type');
                       setSearchParams(params);
                     }}
                     className={cn(
-                      'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
+                      'flex-1 md:flex-none px-8 py-3 rounded-[1.15rem] text-sm font-black uppercase tracking-wider transition-all duration-300',
                       filters.listingType === type
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                        ? 'bg-background text-primary shadow-xl shadow-black/5 ring-1 ring-black/5 scale-105'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-background/30'
                     )}
                   >
-                    {type === 'rent' ? 'For Rent' : 'For Sale'}
+                    For {type === 'rent' ? 'Rent' : 'Sale'}
                   </button>
                 ))}
+              </div>
 
+              <div className="flex items-center gap-4 w-full md:w-auto justify-end">
                 {userCoords && (
-                  <div className="flex items-center gap-2 ml-4 border-l pl-4">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Radius</span>
-                    <div className="flex bg-secondary rounded-lg p-1">
-                      {[5, 10, 25, 50].map((r) => (
+                  <div className="hidden lg:flex items-center gap-3 bg-secondary/20 px-4 py-2 rounded-2xl border border-secondary/30">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Radius</span>
+                    <div className="flex gap-1">
+                      {[10, 25, 50].map((r) => (
                         <button
                           key={r}
                           onClick={() => setRadiusKm(r)}
                           className={cn(
-                            'px-3 py-1 rounded-md text-xs font-medium transition-all',
-                            radiusKm === r 
-                              ? 'bg-background text-foreground shadow-sm' 
-                              : 'text-muted-foreground hover:text-foreground'
+                            'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                            radiusKm === r
+                              ? 'bg-primary text-primary-foreground shadow-inner'
+                              : 'text-muted-foreground hover:bg-primary/5 hover:text-primary'
                           )}
                         >
                           {r}km
@@ -525,46 +571,32 @@ export default function Properties() {
                     </div>
                   </div>
                 )}
-              </div>
-
-              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-                <div className="flex items-center gap-2">
-                  {locationLoading && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary animate-pulse">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                      <span className="text-xs font-medium">Locating...</span>
-                    </div>
-                  )}
-                  {userCoords && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      <span className="text-xs font-medium">Near You</span>
-                    </div>
-                  )}
-                  {locationError && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
-                      <span className="text-xs font-medium">Location Off</span>
-                    </div>
-                  )}
-                </div>
 
                 {!userCoords && !locationLoading && (
-                  <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={requestLocation}>
-                    <MapPin className="w-4 h-4 mr-2" />
-                    Use my location
+                  <Button 
+                    variant="outline" 
+                    size="lg" 
+                    className="rounded-2xl border-dashed border-primary/30 text-primary font-bold hover:bg-primary/5 h-14" 
+                    onClick={requestLocation}
+                  >
+                    <MapPin className="w-5 h-5 mr-2" />
+                    Locate Me
                   </Button>
                 )}
 
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-background border rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all outline-none"
-                >
-                  <option value="relevance">Sort: Relevance</option>
-                  <option value="price-low">Price: Low to High</option>
-                  <option value="price-high">Price: High to Low</option>
-                  <option value="newest">Newest First</option>
-                </select>
+                <div className="relative group/sort">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="appearance-none bg-background border border-border/50 rounded-2xl px-6 pr-12 h-14 text-sm font-bold focus:ring-4 focus:ring-primary/10 transition-all outline-none cursor-pointer shadow-sm hover:border-primary/30"
+                  >
+                    <option value="relevance">Relevance</option>
+                    <option value="price-low">Lowest Price</option>
+                    <option value="price-high">Highest Price</option>
+                    <option value="newest">Newly Listed</option>
+                  </select>
+                  <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none group-hover/sort:text-primary transition-colors" />
+                </div>
               </div>
             </div>
           </div>
@@ -691,6 +723,19 @@ export default function Properties() {
               <p className="text-sm text-muted-foreground mt-1">
                 {filters.listingType === 'rent' ? 'For Rent' : filters.listingType === 'sale' ? 'For Sale' : 'All Properties'}
                 {searchQuery && ` matching "${searchQuery}"`}
+                {userCity && (
+                  <span className="ml-2 inline-flex items-center gap-1.5 bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold transition-all hover:bg-primary/20 cursor-default">
+                    <MapPin className="w-3 h-3" />
+                    {userCity}
+                    <button 
+                      onClick={handleClearCity}
+                      className="ml-1 hover:text-destructive transition-colors"
+                      title="Clear location"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
               </p>
             </div>
 
@@ -786,14 +831,50 @@ export default function Properties() {
             </div>
           )}
 
-          {/* Property Grid/List */}
-          {viewMode === 'map' ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground animate-pulse">Loading amazing properties...</p>
+            </div>
+          ) : viewMode === 'map' ? (
             <div className="h-[calc(100vh-300px)] min-h-[400px] sm:h-[600px] rounded-xl overflow-hidden border border-border relative z-0">
-              <PropertyMap 
-                properties={filteredProperties} 
+              <PropertyMap
+                properties={filteredProperties}
                 center={mapCenter}
                 onBoundsChange={setMapBounds}
               />
+            </div>
+          ) : viewMode === 'bounty' ? (
+            <div className="space-y-8">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-8 shadow-inner">
+                <div className="w-20 h-20 bg-amber-500 rounded-[2rem] flex items-center justify-center shadow-xl shadow-amber-500/20 shrink-0">
+                  <Target className="w-10 h-10 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black tracking-tight text-amber-600">Neighborhood Bounty Board</h2>
+                  <p className="text-amber-700/70 font-medium">Verified residents get paid for auditing nearby listings. Invalidate fakes, earn rewards.</p>
+                </div>
+                <div className="ml-auto flex items-center gap-3 bg-white/50 p-2 rounded-2xl">
+                  <div className="px-4 py-2 bg-amber-500 text-white font-black rounded-xl shadow-lg">₹{(filteredProperties.filter(p => p.bountyReward).length * 50).toLocaleString()} Active Bounties</div>
+                </div>
+              </div>
+
+              {selectedBounty ? (
+                <VideoAuditPortal 
+                  property={selectedBounty} 
+                  onSuccess={() => {
+                    setSelectedBounty(null);
+                    // refetch logic
+                  }}
+                  onCancel={() => setSelectedBounty(null)}
+                />
+              ) : (
+                <BountyMap 
+                  properties={filteredProperties}
+                  userLocation={[mapCenter[0], mapCenter[1]]}
+                  onSelectProperty={setSelectedBounty}
+                />
+              )}
             </div>
           ) : filteredProperties.length > 0 ? (
             <div
@@ -811,7 +892,7 @@ export default function Properties() {
                   radiusKm={radiusKm}
                 />
               ))}
-              
+
               {/* Infinite Scroll Loader */}
               <div ref={observerTarget} className="col-span-full py-8 flex justify-center w-full">
                 {isFetchingNextPage && <Loader2 className="w-8 h-8 animate-spin text-primary" />}

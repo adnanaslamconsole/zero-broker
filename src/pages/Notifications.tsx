@@ -95,7 +95,7 @@ export default function Notifications() {
       case 'success': return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'warning': return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
       case 'error': return <AlertCircle className="w-5 h-5 text-red-500" />;
-      default: return <Info className="w-5 h-5 text-blue-500" />;
+      default: return <Info className="w-5 h-5 text-primary" />;
     }
   };
 

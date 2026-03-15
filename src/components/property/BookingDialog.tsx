@@ -24,6 +24,7 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [step, setStep] = useState<'slots' | 'payment'>('slots');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const { data: ownerAvailability } = useQuery({
     queryKey: ['owner-availability', property.ownerId],
@@ -53,7 +54,15 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
       // Handle demo user
       if (user.profile.isDemo) {
         await new Promise(resolve => setTimeout(resolve, 1500));
-        return { id: 'demo-booking-id' };
+        return { 
+          booking: { 
+            id: 'demo-booking-id', 
+            payment_id: 'demo-payment-id' 
+          },
+          payment: { 
+            referenceId: 'demo-ref-id' 
+          }
+        };
       }
 
       // 1. Create the booking
@@ -131,7 +140,9 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
     },
     onSuccess: (data) => {
       const { booking, payment } = data;
-      toast.success('Visit booked successfully! ₹99 Token Paid and held in Escrow.');
+      toast.success('Your visit booked', {
+        duration: 5000,
+      });
       
       // Send automated notifications to both parties
       notificationService.notifyBookingConfirmed({
@@ -155,10 +166,17 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
   });
 
   const handleBooking = () => {
-    if (!selectedDate || !selectedTime) {
-      toast.error('Please select a date and time');
+    if (!selectedDate) {
+      setValidationError('Please select a visit date');
+      toast.error('Date selection is required');
       return;
     }
+    if (!selectedTime) {
+      setValidationError('Please pick an available time slot');
+      toast.error('Time slot is required');
+      return;
+    }
+    setValidationError(null);
     setStep('payment');
   };
 
@@ -242,6 +260,11 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
                     <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
                     Select Time Slot
                   </div>
+                  {validationError && !selectedTime && (
+                    <p className="text-[10px] font-black text-destructive uppercase tracking-widest animate-pulse">
+                      * {validationError}
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {availableSlots.map((time) => (
                       <button

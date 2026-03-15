@@ -84,6 +84,7 @@ const transformProperty = (dbProperty: any): Property => ({
 
 import { sampleProperties } from '@/data/sampleProperties';
 import { BookingDialog } from '@/components/property/BookingDialog';
+import { PropertyShare } from '@/components/property/PropertyShare';
 
 // Helper to check if string is valid UUID
 const isUUID = (str: string) => {
@@ -253,9 +254,11 @@ export default function PropertyDetail() {
                         )}
                       />
                     </button>
-                    <button className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors shadow-sm">
-                      <Share2 className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
-                    </button>
+                    <PropertyShare 
+                      propertyId={property.id} 
+                      title={property.title} 
+                      className="w-8 h-8 sm:w-10 sm:h-10 bg-white/90 hover:bg-white shadow-sm border-none"
+                    />
                   </div>
 
                   {/* Image Counter */}
