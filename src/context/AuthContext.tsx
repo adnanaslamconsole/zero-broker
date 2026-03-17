@@ -230,8 +230,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         error = err;
       } else {
+        let phone = identifier;
+        if (!phone.startsWith('+')) {
+          phone = phone.startsWith('91') && phone.length === 12 ? `+${phone}` : `+91${phone}`;
+        }
         const { error: err } = await supabase.auth.signInWithOtp({
-          phone: identifier,
+          phone: phone,
           options: {
             shouldCreateUser: true,
             data: {
@@ -608,8 +612,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error = null;
         }
       } else {
+        let phone = identifier;
+        if (!phone.startsWith('+')) {
+          phone = phone.startsWith('91') && phone.length === 12 ? `+${phone}` : `+91${phone}`;
+        }
         const { error: err } = await supabase.auth.verifyOtp({
-          phone: identifier, // Phone numbers shouldn't be lowercased
+          phone: phone, // Phone numbers shouldn't be lowercased
           token,
           type: 'sms',
         });

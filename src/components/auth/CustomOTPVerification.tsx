@@ -44,8 +44,8 @@ export const CustomOTPVerification: React.FC = () => {
     };
 
     const handleVerifyOtp = async () => {
-        if (otp.length !== 6) {
-            toast.error('Please enter a valid 6-digit OTP');
+        if (otp.length !== 8) {
+            toast.error('Please enter a valid 8-digit OTP');
             return;
         }
 
@@ -113,18 +113,18 @@ export const CustomOTPVerification: React.FC = () => {
                     >
                         <div className="text-center space-y-2">
                             <h2 className="text-2xl font-bold">Verify Code</h2>
-                            <p className="text-muted-foreground text-sm">We've sent a 6-digit code to {phoneNumber}</p>
+                            <p className="text-muted-foreground text-sm">We've sent an 8-digit code to {phoneNumber}</p>
                         </div>
 
                         <div className="flex justify-center py-4">
                             <InputOTP
-                                maxLength={6}
+                                maxLength={8}
                                 value={otp}
                                 onChange={setOtp}
                                 disabled={isLoading}
                             >
                                 <InputOTPGroup className="gap-2">
-                                    {[...Array(6)].map((_, i) => (
+                                    {[...Array(8)].map((_, i) => (
                                         <InputOTPSlot
                                             key={i}
                                             index={i}
@@ -138,7 +138,7 @@ export const CustomOTPVerification: React.FC = () => {
                         <Button
                             className="w-full h-12 rounded-xl font-bold"
                             onClick={handleVerifyOtp}
-                            disabled={isLoading || otp.length !== 6}
+                            disabled={isLoading || otp.length !== 8}
                         >
                             {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                             Verify OTP

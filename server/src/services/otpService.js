@@ -6,11 +6,11 @@ const OTP_EXPIRY = parseInt(process.env.OTP_EXPIRY_SECONDS, 10) || 300; // 5 min
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 10;
 
 /**
- * Generates a random 6-digit OTP.
- * @returns {string} 6-digit OTP string.
+ * Generates a random 8-digit OTP.
+ * @returns {string} 8-digit OTP string.
  */
 const generateOTP = () => {
-    return crypto.randomInt(100000, 999999).toString();
+    return crypto.randomInt(10000000, 99999999).toString();
 };
 
 /**

@@ -105,7 +105,7 @@ export default function Login() {
     setError('');
     const isEmail = identifier.includes('@');
     const type = isEmail ? 'email' : 'phone';
-    const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/\D/g, '');
+    const formattedIdentifier = isEmail ? identifier.trim().toLowerCase() : identifier.replace(/[^\d+]/g, '');
 
     if (isEmail) {
       try {
