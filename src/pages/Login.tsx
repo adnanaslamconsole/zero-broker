@@ -17,41 +17,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { assertEmailNotDisposable } from '@/lib/disposableEmailGuard';
 
 const AnimatedBackground = () => (
-  <div className="fixed inset-0 -z-10 overflow-hidden bg-[#020617]">
-    {/* Primary Ambient Glow */}
-    <div className="absolute top-0 -left-[10%] w-[70%] h-[70%] rounded-full bg-primary/10 blur-[120px] animate-pulse-glow" />
-    <div className="absolute bottom-0 -right-[10%] w-[60%] h-[60%] rounded-full bg-blue-500/10 blur-[120px] animate-pulse-glow" style={{ animationDelay: '1s' }} />
+  <div className="fixed inset-0 -z-10 overflow-hidden bg-slate-50">
+    {/* Soft Mesh Gradients */}
+    <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary/5 blur-[120px] animate-pulse-glow" />
+    <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] rounded-full bg-orange-200/20 blur-[130px] animate-pulse-glow" style={{ animationDelay: '1.5s' }} />
+    <div className="absolute top-[20%] right-[10%] w-[40%] h-[40%] rounded-full bg-blue-100/30 blur-[100px] animate-pulse-glow" style={{ animationDelay: '3s' }} />
     
-    {/* Floating Orbs */}
+    {/* Drifting Shapes */}
     <motion.div
       animate={{
-        x: [0, 100, 0],
-        y: [0, -50, 0],
-        scale: [1, 1.2, 1],
-      }}
-      transition={{
-        duration: 20,
-        repeat: Infinity,
-        ease: "linear",
-      }}
-      className="absolute top-1/4 left-1/4 w-64 h-64 rounded-full bg-primary/20 blur-[80px]"
-    />
-    <motion.div
-      animate={{
-        x: [0, -80, 0],
-        y: [0, 100, 0],
+        x: [0, 60, 0],
+        y: [0, -40, 0],
         scale: [1, 1.1, 1],
       }}
       transition={{
-        duration: 25,
+        duration: 18,
         repeat: Infinity,
-        ease: "linear",
+        ease: "easeInOut",
       }}
-      className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-blue-600/10 blur-[100px]"
+      className="absolute top-1/4 left-1/3 w-72 h-72 rounded-full bg-orange-100/20 blur-[90px]"
     />
     
-    {/* Subtle Grid Pattern */}
-    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PHBhdGggZD0iTTM2IDM0di00aC0ydjRoLTR2Mmg0djRoMnYtNGg0di0yaC00em0wLTMwVjBoLTJ2NGgtNHYyaDR2NGgyVjZoNHY0aC00ek02IDM0di00SDR2NGgtNHYyaDR2NGgydi00aDR2LTJINnpNNiA0VjBINFY0aC00djJoNHY0aDJWNmg0VjRINnoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-20" />
+    {/* Subtle Premium Pattern */}
+    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiM2YTUyZWMiIGZpbGwtb3BhY2l0eT0iMC4wMiI+PHBhdGggZD0iTTM2IDM0di00aC0ydjRoLTR2Mmg0djRoMnYtNGg0di0yaC00em0wLTMwVjBoLTJ2NGgtNHYyaDR2NGgyVjZoNHY0aC00ek02IDM0di00SDR2NGgtNHYyaDR2NGgydi00aDR2LTJINnpNNiA0VjBINFY0aC00djJoNHY0aDJWNmg0VjRINnoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-[0.4]" />
   </div>
 );
 
@@ -164,72 +152,77 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen relative flex flex-col font-sans selection:bg-primary/30">
+    <div className="min-h-screen relative flex flex-col font-sans selection:bg-orange-200">
       <AnimatedBackground />
       <Header />
       
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8 z-10">
-        <div className="w-full max-w-[460px]">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8 z-10 transition-colors duration-1000">
+        <div className="w-full max-w-[500px]">
           <motion.div 
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+            initial={{ opacity: 0, scale: 0.95, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
             className="group relative"
           >
-            {/* Glossy Card Container */}
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 rounded-[2.5rem] blur-xl group-hover:blur-2xl transition-all duration-500" />
+            {/* Soft Ambient Shadow */}
+            <div className="absolute -inset-1 bg-gradient-to-r from-orange-400/10 via-primary/10 to-blue-400/10 rounded-[2.5rem] blur-2xl opacity-50 group-hover:opacity-100 transition duration-1000 group-hover:duration-200" />
             
-            <div className="relative bg-[#020617]/40 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl p-8 sm:p-12">
-              <div className="text-center space-y-3 mb-10">
+            <div className="relative bg-white/90 backdrop-blur-3xl border border-white/80 rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] overflow-hidden p-8 sm:p-12">
+              <div className="text-center space-y-4 mb-10">
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  transition={{ delay: 0.2 }}
-                  className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/20 text-primary mb-4 shadow-glow"
+                  transition={{ delay: 0.2, type: 'spring' }}
+                  className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/5 text-primary mb-2 shadow-sm border border-primary/10"
                 >
                   {step === 'method' ? <User className="w-8 h-8" /> : <ShieldCheck className="w-8 h-8" />}
                 </motion.div>
                 
-                <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight text-white">
-                  {step === 'method' ? 'Welcome Back' : 'Verification'}
-                </h1>
-                <p className="text-slate-400 text-sm leading-relaxed max-w-[280px] mx-auto">
-                  {step === 'method' 
-                    ? 'Simplify your property journey with ZeroBroker' 
-                    : `We've sent an 8-digit code to your ${identifier.includes('@') ? 'email' : 'phone'}`
-                  }
-                </p>
+                <div className="space-y-1">
+                  <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight text-slate-900">
+                    {step === 'method' ? 'Welcome Back' : 'Security Check'}
+                  </h1>
+                  <p className="text-slate-500 text-sm leading-relaxed max-w-[280px] mx-auto">
+                    {step === 'method' 
+                      ? 'Experience property management, simplified.' 
+                      : `Enter the 8-digit code sent to your ${identifier.includes('@') ? 'email' : 'phone'}`
+                    }
+                  </p>
+                </div>
               </div>
 
               <AnimatePresence mode="wait">
                 {step === 'method' ? (
                   <motion.div
                     key="login-form"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.4 }}
                     className="space-y-8"
                   >
                     <div className="space-y-4">
-                      <label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">I am a</label>
-                      <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-900/60 rounded-2xl border border-white/5 relative">
-                        {/* Sliding Indicator */}
+                      <div className="flex items-center justify-between ml-1 px-1">
+                        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Account Type</label>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100/50 rounded-2xl border border-slate-200/50 relative">
+                        {/* Slide Indicator */}
                         <motion.div
                           layoutId="role-indicator"
-                          className="absolute inset-y-1.5 bg-primary rounded-xl shadow-lg shadow-primary/20 z-0"
+                          className="absolute inset-y-1.5 bg-white rounded-xl shadow-[0_4px_12px_-2px_rgba(0,0,0,0.12)] z-0"
                           initial={false}
                           animate={{ 
-                            left: role === 'tenant' ? '6px' : 'calc(50% + 1.5px)',
-                            right: role === 'tenant' ? 'calc(50% + 1.5px)' : '6px'
+                            left: role === 'tenant' ? '6px' : 'calc(50% + 1px)',
+                            right: role === 'tenant' ? 'calc(50% + 1px)' : '6px'
                           }}
-                          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 35 }}
                         />
                         
                         <button
                           onClick={() => setRole('tenant')}
                           className={cn(
-                            "relative z-10 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300",
-                            role === 'tenant' ? "text-white" : "text-slate-400 hover:text-slate-200"
+                            "relative z-10 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300",
+                            role === 'tenant' ? "text-primary" : "text-slate-400 hover:text-slate-600"
                           )}
                         >
                           <User className="w-4 h-4" /> Tenant
@@ -237,8 +230,8 @@ export default function Login() {
                         <button
                           onClick={() => setRole('owner')}
                           className={cn(
-                            "relative z-10 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300",
-                            role === 'owner' ? "text-white" : "text-slate-400 hover:text-slate-200"
+                            "relative z-10 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300",
+                            role === 'owner' ? "text-primary" : "text-slate-400 hover:text-slate-600"
                           )}
                         >
                           <Briefcase className="w-4 h-4" /> Owner
@@ -248,35 +241,35 @@ export default function Login() {
 
                     <form onSubmit={handleSendOtp} className="space-y-6">
                       <div className="space-y-3">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1 flex justify-between">
-                          Identifier
-                          <span className="text-[10px] font-normal lowercase opacity-60">phone or email</span>
-                        </label>
+                        <div className="flex items-center justify-between ml-1 px-1">
+                          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Contact Method</label>
+                          <span className="text-[10px] text-slate-300 font-medium lowercase">phone or email</span>
+                        </div>
                         <div className="relative group">
-                          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">
+                          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors duration-300">
                             {identifier.includes('@') ? <Mail className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
                           </div>
                           <Input
                             type="text"
-                            placeholder="yourname@example.com"
+                            placeholder="hello@zerobroker.com"
                             value={identifier}
                             onChange={(e) => {
                               setIdentifier(e.target.value);
                               if (error) setError("");
                             }}
                             className={cn(
-                              "h-14 pl-12 bg-slate-900/40 border-white/10 text-white placeholder:text-slate-600 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-2xl",
-                              error && "border-destructive/50"
+                              "h-14 pl-12 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-primary/40 focus:ring-primary/5 transition-all duration-300 rounded-2xl shadow-sm",
+                              error && "border-destructive/30 bg-destructive/[0.02]"
                             )}
                           />
                         </div>
                         {error && (
                           <motion.p 
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="text-xs font-medium text-destructive/90 flex items-center gap-1.5 ml-1"
+                            initial={{ opacity: 0, x: -5 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="text-[11px] font-semibold text-destructive flex items-center gap-1.5 ml-1"
                           >
-                            <AlertCircle className="w-3.5 h-3.5" /> {error}
+                            <AlertCircle className="w-3 h-3" /> {error}
                           </motion.p>
                         )}
                       </div>
@@ -284,16 +277,16 @@ export default function Login() {
                       <Button 
                         type="submit" 
                         size="lg" 
-                        className="group w-full h-14 text-lg font-bold rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 transition-all active:scale-[0.98]" 
+                        className="group w-full h-14 text-base font-bold rounded-2xl bg-slate-900 hover:bg-slate-800 text-white shadow-xl shadow-slate-200 transition-all duration-300 active:scale-[0.98]" 
                         disabled={!identifier || isSendingOtp}
                       >
                         {isSendingOtp ? (
                           <span className="flex items-center gap-2">
-                            <Clock className="w-5 h-5 animate-spin" /> Starting...
+                            <Clock className="w-5 h-5 animate-spin opacity-50" /> Sending OTP...
                           </span>
                         ) : (
                           <span className="flex items-center gap-2">
-                            Send Code <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                            Request Access <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                           </span>
                         )}
                       </Button>
@@ -302,81 +295,86 @@ export default function Login() {
                 ) : (
                   <motion.div
                     key="otp-verification"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
+                    initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 1.02, y: -10 }}
+                    transition={{ duration: 0.5, ease: "circOut" }}
                     className="space-y-8"
                   >
-                    <div className="flex flex-col items-center justify-center space-y-8 py-2">
-                      <div className="bg-slate-900/60 p-5 rounded-3xl border border-white/10 shadow-inner">
+                    <div className="flex flex-col items-center justify-center space-y-10 py-2">
+                      <div className="bg-slate-50/80 p-6 rounded-[2rem] border border-slate-100 shadow-inner ring-1 ring-slate-100/50">
                         <InputOTP
                           maxLength={8}
                           value={otp}
                           onChange={(value) => setOtp(value)}
                           disabled={isVerifyingOtp}
                         >
-                          <InputOTPGroup className="gap-2">
+                          <InputOTPGroup className="gap-2 sm:gap-2.5">
                             {[...Array(8)].map((_, i) => (
                               <InputOTPSlot 
                                 key={i}
                                 index={i} 
-                                className="w-9 h-14 sm:w-11 sm:h-16 text-xl sm:text-2xl font-bold rounded-xl border-white/10 bg-[#020617]/60 text-white focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-lg transition-all" 
+                                className="w-9 h-14 sm:w-10 sm:h-16 text-xl sm:text-2xl font-bold rounded-xl border-slate-200 bg-white text-slate-900 focus:border-primary focus:ring-4 focus:ring-primary/5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] transition-all duration-300" 
                               />
                             ))}
                           </InputOTPGroup>
                         </InputOTP>
                       </div>
                       
-                      <Badge variant="outline" className="px-4 py-1.5 rounded-full bg-primary/5 text-primary border-primary/20 animate-pulse-glow">
-                        <span className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-widest">
-                          <ShieldCheck className="w-3.5 h-3.5" /> Secure Session
-                        </span>
-                      </Badge>
+                      <div className="flex flex-col items-center gap-4">
+                        <Badge variant="outline" className="px-4 py-1.5 rounded-full bg-orange-50/50 text-orange-600 border-orange-100/50 font-bold tracking-tight">
+                          <span className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
+                            <ShieldCheck className="w-3.5 h-3.5" /> End-to-end Encrypted
+                          </span>
+                        </Badge>
+                        <p className="text-xs text-slate-400 font-medium">
+                          Detecting OTP automatically...
+                        </p>
+                      </div>
                     </div>
 
                     <div className="space-y-4">
                       <Button 
                         onClick={handleVerifyOtp}
                         size="lg" 
-                        className="w-full h-16 text-xl font-bold rounded-2xl bg-primary hover:bg-primary/90 shadow-2xl shadow-primary/30 transition-all active:scale-[0.98]" 
+                        className="w-full h-16 text-lg font-bold rounded-2xl bg-primary hover:bg-primary/90 text-white shadow-2xl shadow-primary/20 transition-all duration-300 active:scale-[0.98]" 
                         disabled={otp.length !== 8 || isVerifyingOtp}
                       >
                         {isVerifyingOtp ? (
                           <span className="flex items-center gap-2">
-                            <Clock className="w-6 h-6 animate-spin" /> Authorizing...
+                            <Clock className="w-6 h-6 animate-spin opacity-50" /> Authorizing...
                           </span>
-                        ) : 'Verify & Continue'}
+                        ) : 'Log In Now'}
                       </Button>
                       
-                      <div className="flex flex-col gap-5 pt-2">
-                        <p className="text-sm text-center text-slate-400">
-                          Resend security code in{' '}
-                          <span className="font-mono font-bold text-white bg-slate-800 px-2 py-0.5 rounded ml-1">
+                      <div className="flex flex-col gap-6 pt-2">
+                        <div className="flex items-center justify-center gap-2 text-sm">
+                           <span className="text-slate-400 font-medium">Reset in</span>
+                           <span className="font-mono font-bold text-slate-700 bg-slate-100/80 px-2 py-0.5 rounded-md min-w-[32px] text-center border border-slate-200/50">
                             {timer.toString().padStart(2, '0')}s
-                          </span>
-                        </p>
+                           </span>
+                        </div>
                         
-                        <div className="h-px bg-white/5 w-full" />
+                        <div className="h-px bg-slate-100 w-full" />
                         
-                        <div className="flex flex-col gap-4">
-                          <button 
-                            onClick={handleResendOtp}
-                            disabled={timer > 0 || isResendingOtp || isVerifyingOtp}
-                            className="text-sm font-bold text-primary hover:text-primary/80 disabled:opacity-30 transition-colors uppercase tracking-widest"
-                          >
-                            {isResendingOtp ? 'Resending...' : 'Resend Code'}
-                          </button>
-                          
+                        <div className="flex items-center justify-between px-2">
                           <button 
                             onClick={() => {
                               setStep('method');
                               setOtp('');
                               setError('');
                             }}
-                            className="flex items-center justify-center gap-2 text-xs font-semibold text-slate-500 hover:text-white transition-colors"
+                            className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-900 transition-colors uppercase tracking-wider"
                           >
-                            <ArrowLeft className="w-4 h-4" />
-                            Back to identification
+                            <ArrowLeft className="w-3.5 h-3.5" /> Edit Info
+                          </button>
+
+                          <button 
+                            onClick={handleResendOtp}
+                            disabled={timer > 0 || isResendingOtp || isVerifyingOtp}
+                            className="text-xs font-bold text-primary hover:text-primary/80 disabled:opacity-30 transition-colors uppercase tracking-wider"
+                          >
+                            {isResendingOtp ? 'Sending...' : 'Need New Code?'}
                           </button>
                         </div>
                       </div>
@@ -384,6 +382,11 @@ export default function Login() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </div>
+            
+            {/* Trusted Footer Info */}
+            <div className="mt-8 text-center sm:hidden">
+               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">ZeroBroker Security Infrastructure</p>
             </div>
           </motion.div>
         </div>

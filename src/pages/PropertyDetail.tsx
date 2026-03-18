@@ -25,7 +25,12 @@ import {
   Users,
   TrendingUp,
   AlertCircle,
+  Lock,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { usePropertyBooking } from '@/hooks/usePropertyBooking';
+import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
@@ -85,6 +90,7 @@ const transformProperty = (dbProperty: any): Property => ({
 import { sampleProperties } from '@/data/sampleProperties';
 import { BookingDialog } from '@/components/property/BookingDialog';
 import { PropertyShare } from '@/components/property/PropertyShare';
+import { ChatDrawer } from '@/components/property/ChatDrawer';
 
 // Helper to check if string is valid UUID
 const isUUID = (str: string) => {
@@ -98,6 +104,8 @@ export default function PropertyDetail() {
   const [isLiked, setIsLiked] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const { user } = useAuth();
   const placeholderImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80';
 
   const { data: property, isLoading } = useQuery({
@@ -124,6 +132,10 @@ export default function PropertyDetail() {
     },
     enabled: Boolean(id),
   });
+
+  const { data: booking } = usePropertyBooking(id);
+  const isOwner = user?.profile?.id === property?.ownerId;
+  const canChat = isOwner || !!booking;
 
   const getTrustScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
@@ -497,10 +509,42 @@ export default function PropertyDetail() {
                   <ShieldCheck className="w-4 h-4" />
                   Book Verified Visit
                 </Button>
-                  <Button variant="secondary" size="lg" className="w-full gap-2 h-12 rounded-xl font-bold">
-                    <MessageCircle className="w-4 h-4" />
-                    Send Message
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button 
+                          variant="secondary" 
+                          size="lg" 
+                          className={cn(
+                            "w-full gap-2 h-12 rounded-xl font-bold transition-all",
+                            !canChat ? "opacity-50 grayscale cursor-not-allowed bg-muted" : ""
+                          )}
+                          onClick={() => {
+                            if (!canChat) {
+                              toast.info('Chat unlocked after booking', {
+                                description: 'Please book a visit slot to initiate chat with the owner.',
+                                icon: <Lock className="w-4 h-4" />
+                              });
+                              return;
+                            }
+                            setIsChatOpen(true);
+                          }}
+                        >
+                          {canChat ? (
+                            <MessageCircle className="w-4 h-4" />
+                          ) : (
+                            <Lock className="w-4 h-4 text-muted-foreground" />
+                          )}
+                          {canChat ? 'Send Message' : 'Chat Locked'}
+                        </Button>
+                      </TooltipTrigger>
+                      {!canChat && (
+                        <TooltipContent side="bottom" className="bg-foreground text-background font-black text-[10px] uppercase tracking-widest px-4 py-2 rounded-xl">
+                          Book a visit to unlock chat
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
                 <div className="pt-4 border-t border-border">
@@ -577,6 +621,14 @@ export default function PropertyDetail() {
           property={property} 
           open={isBookingOpen} 
           onOpenChange={setIsBookingOpen} 
+        />
+      )}
+      {property && booking && (
+        <ChatDrawer
+          property={property}
+          bookingId={booking.id}
+          open={isChatOpen}
+          onOpenChange={setIsChatOpen}
         />
       )}
     </div>

@@ -3,8 +3,10 @@ import { clearExpiredItems } from './localStorageTTL';
 
 // Increment this version whenever a significant change requires a cache clear
 // (e.g., schema changes, aggregation changes, or to solve aggressive caching on mobile)
-export const CACHE_VERSION = '2026.03.15.v2';
+export const CACHE_VERSION = '2026.03.18.v2';
+export const SECURITY_VERSION = '2026.03.18.s1'; // Triggers full clear including auth
 export const VERSION_KEY = 'zerobroker_cache_version';
+export const SECURITY_VERSION_KEY = 'zerobroker_security_version';
 
 /**
  * Initializes the cache sync logic.
@@ -17,7 +19,20 @@ export function initializeCacheSync() {
     clearExpiredItems();
 
     const storedVersion = localStorage.getItem(VERSION_KEY);
+    const storedSecurityVersion = localStorage.getItem(SECURITY_VERSION_KEY);
     
+    // 1. Check for Security Reset (Full Clear)
+    if (storedSecurityVersion !== SECURITY_VERSION) {
+      console.warn(`[CacheSync] SECURITY VERSION mismatch. Full reset required.`);
+      localStorage.clear();
+      sessionStorage.clear();
+      localStorage.setItem(SECURITY_VERSION_KEY, SECURITY_VERSION);
+      localStorage.setItem(VERSION_KEY, CACHE_VERSION);
+      window.location.reload();
+      return;
+    }
+
+    // 2. Check for General Cache Reset (Selective Clear)
     if (storedVersion !== CACHE_VERSION) {
       console.log(`[CacheSync] Version mismatch detected. Local: ${storedVersion}, App: ${CACHE_VERSION}. Invalidating cache...`);
       
@@ -25,24 +40,21 @@ export function initializeCacheSync() {
       queryClient.clear();
       
       // 2. Selective LocalStorage cleanup
-      // We keep authentication tokens if possible to avoid forced logouts, 
-      // but clear property-related data.
+      // All auth is now handled via HttpOnly cookies on the backend — no auth keys to preserve.
       const keysToKeep = [
-        'sb-kjiksmjgexhgldxsipiq-auth-token', // Example Supabase token key
-        'zerobroker-auth-session',
+        VERSION_KEY,
+        SECURITY_VERSION_KEY,
+        'user_settings', // Keep user preferences if any
+        'zero_broker_property_draft', // Keep offline draft
       ];
       
-      const keysToRemove: string[] = [];
+      const allKeys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (!key) continue;
-        
-        // Don't clear auth tokens unless strictly necessary
-        const isAuthToken = keysToKeep.some(k => key.includes(k));
-        if (!isAuthToken) {
-          keysToRemove.push(key);
-        }
+        if (key) allKeys.push(key);
       }
+
+      const keysToRemove = allKeys.filter(key => !keysToKeep.some(k => key.includes(k)));
       
       keysToRemove.forEach(key => {
         try {
@@ -81,7 +93,7 @@ export function clearAllAppData() {
     
     // 2. Clear all storage
     // We remove almost everything but can preserve the cache version to avoid double reloads
-    const preservedKeys = [VERSION_KEY];
+    const preservedKeys = [VERSION_KEY, SECURITY_VERSION_KEY];
     const keysToRemove: string[] = [];
     
     for (let i = 0; i < localStorage.length; i++) {

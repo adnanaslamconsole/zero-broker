@@ -1,9 +1,20 @@
 import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Badge } from '@/components/ui/badge';
-import { ShieldCheck, Calendar as CalendarIcon, Clock, CreditCard, Info } from 'lucide-react';
+import { 
+  ShieldCheck, 
+  Calendar as CalendarIcon, 
+  Clock, 
+  CreditCard, 
+  Info, 
+  Loader2, 
+  AlertCircle, 
+  MessageCircle, 
+  Crown 
+} from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Property } from '@/types/property';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -12,6 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { notificationService } from '@/lib/notificationService';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
+import { usePropertyBooking } from '@/hooks/usePropertyBooking';
 
 interface BookingDialogProps {
   property: Property;
@@ -21,6 +33,7 @@ interface BookingDialogProps {
 
 export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, onOpenChange }) => {
   const { user } = useAuth();
+  const { data: existingBooking, isLoading: isCheckingBooking } = usePropertyBooking(property.id);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [step, setStep] = useState<'slots' | 'payment'>('slots');
@@ -82,14 +95,14 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
 
       if (bookingError) throw bookingError;
 
-      // 2. Create the payment record with audit trail and escrow details
+      // 2. Create the payment record
       const paymentId = `pay_${Math.random().toString(36).substr(2, 9)}`;
       const { data: payment, error: paymentError } = await supabase
         .from('payments')
         .insert({
           id: paymentId,
-          userId: user!.profile.id,
-          ownerId: property.ownerId,
+          userid: user!.profile.id,
+          ownerid: property.ownerId,
           amount: 99,
           currency: 'INR',
           method: 'upi',
@@ -108,14 +121,8 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
             {
               timestamp: new Date().toISOString(),
               action: 'Payment Initiated',
-              actorId: user!.profile.id,
+              actorid: user!.profile.id,
               details: 'UPI Token Payment for site visit'
-            },
-            {
-              timestamp: new Date().toISOString(),
-              action: 'Escrow Locked',
-              actorId: 'system',
-              details: 'Funds held in IDFC Escrow until visit completion'
             }
           ]
         })
@@ -124,11 +131,8 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
 
       if (paymentError) {
         console.error('Payment record creation failed:', paymentError);
-        // We still have the booking, but payment record is missing. 
-        // In a real app, we would rollback or handle this carefully.
       }
 
-      // 3. Update booking with payment reference
       if (payment) {
         await supabase
           .from('visit_bookings')
@@ -140,11 +144,8 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
     },
     onSuccess: (data) => {
       const { booking, payment } = data;
-      toast.success('Your visit booked', {
-        duration: 5000,
-      });
+      toast.success('Your visit booked', { duration: 5000 });
       
-      // Send automated notifications to both parties
       notificationService.notifyBookingConfirmed({
         bookingId: booking.id,
         ownerId: property.ownerId,
@@ -159,9 +160,26 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
       onOpenChange(false);
       setStep('slots');
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       logError(error, { action: 'booking.create' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'booking.create' }) || 'Failed to book visit');
+      const errorMessage = error?.message || error?.details || '';
+      
+      // Detailed error mapping for the 26-point checklist
+      if (errorMessage.includes('tenant_not_owner')) {
+        toast.error('Security Violation: Owners cannot book their own property.');
+      } else if (errorMessage.includes('unique_active_booking_per_tenant')) {
+        toast.error('Duplicate Booking: You already have an active visit scheduled.');
+      } else if (errorMessage.includes('unique_slot_occupancy')) {
+        toast.error('Race Condition: This slot was just booked by another user.');
+        setStep('slots');
+      } else if (errorMessage.includes('visit_date_not_past')) {
+        toast.error('Invalid Date: You cannot book a visit in the past.');
+      } else if (errorMessage.includes('Cannot book: Property is currently')) {
+        toast.error('Listing Status Change: This property is no longer active.');
+        onOpenChange(false);
+      } else {
+        toast.error(getUserFriendlyErrorMessage(error, { action: 'booking.create' }) || 'System Error: Failed to secure booking.');
+      }
     }
   });
 
@@ -181,8 +199,8 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
   };
 
   const confirmPayment = async () => {
-    // 1. Check if slot is already booked
-    const { data: existingBooking, error: checkError } = await supabase
+    // Basic frontend-level check before mutation
+    const { data: existing, error: checkError } = await supabase
       .from('visit_bookings')
       .select('id')
       .eq('property_id', property.id)
@@ -196,15 +214,17 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
       return;
     }
 
-    if (existingBooking) {
+    if (existing) {
       toast.error('This slot has already been booked. Please select another slot.');
       setStep('slots');
       return;
     }
 
-    // 2. Proceed with booking
     bookVisitMutation.mutate();
   };
+
+  const isOwner = user?.profile?.id === property.ownerId;
+  const isPropertyInactive = !property.isActive;
 
   const isDayAvailable = (date: Date) => {
     if (!ownerAvailability?.available_days) return true;
@@ -232,8 +252,86 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
           </DialogHeader>
         </div>
 
-        <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1">
-          {step === 'slots' ? (
+        <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 flex flex-col">
+          {isCheckingBooking ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-12 gap-4">
+              <Loader2 className="w-10 h-10 animate-spin text-primary/40" />
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">Verifying Booking History...</p>
+            </div>
+          ) : existingBooking ? (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex-1 flex flex-col py-4 sm:py-8"
+            >
+              <div className="bg-amber-50 rounded-[2rem] border-2 border-amber-100 p-6 sm:p-8 text-center space-y-6">
+                <div className="w-20 h-20 bg-amber-100 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner">
+                  <AlertCircle className="w-10 h-10 text-amber-600" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl sm:text-2xl font-black tracking-tight text-amber-900">Already Booked!</h3>
+                  <p className="text-sm font-medium text-amber-800 leading-relaxed px-4">
+                    You already have an active booking for this property on <span className="font-bold">{new Date(existingBooking.visit_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span> at <span className="font-bold">{existingBooking.visit_time}</span>.
+                  </p>
+                </div>
+                
+                <div className="flex flex-col gap-3 pt-4">
+                   <Button 
+                    className="h-14 rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs shadow-xl shadow-amber-600/10 bg-amber-600 hover:bg-amber-700"
+                    onClick={() => window.location.href = '/chat'}
+                   >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Open Chat with Owner
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    className="h-12 rounded-2xl font-bold text-amber-700 hover:bg-amber-100 transition-all text-xs"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Explore Other Properties
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          ) : isOwner ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-12 gap-6 text-center">
+              <div className="w-20 h-20 bg-primary/10 rounded-[2.5rem] flex items-center justify-center shadow-inner">
+                <Crown className="w-10 h-10 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-foreground">You Own This Property</h3>
+                <p className="text-sm text-muted-foreground font-medium px-8 leading-relaxed">
+                  Owners cannot book visits to their own listings. Use the dashboard to manage inquiries.
+                </p>
+              </div>
+              <Button 
+                variant="outline" 
+                className="rounded-2xl h-12 px-8 font-black uppercase tracking-widest text-[10px] border-primary/20 text-primary hover:bg-primary/5"
+                onClick={() => window.location.href = '/dashboard/listings'}
+              >
+                Go to Dashboard
+              </Button>
+            </div>
+          ) : isPropertyInactive ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-12 gap-6 text-center">
+              <div className="w-20 h-20 bg-destructive/10 rounded-[2.5rem] flex items-center justify-center">
+                <AlertCircle className="w-10 h-10 text-destructive" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-foreground">Listing Unavailable</h3>
+                <p className="text-sm text-muted-foreground font-medium px-8 leading-relaxed">
+                  This property is no longer active or accepting new bookings.
+                </p>
+              </div>
+              <Button 
+                variant="ghost" 
+                className="rounded-2xl text-xs font-bold"
+                onClick={() => onOpenChange(false)}
+              >
+                Close
+              </Button>
+            </div>
+          ) : step === 'slots' ? (
             <div className="space-y-4 sm:space-y-6">
               <div className="space-y-2.5 sm:space-y-3">
                 <div className="flex items-center gap-2 text-[13px] sm:text-sm font-bold text-foreground">
@@ -331,10 +429,26 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
                   100% Secure Payment via Razorpay
                 </div>
                 <div className="sticky bottom-0 pt-2 bg-background/80 backdrop-blur-sm sm:static sm:bg-transparent flex flex-col gap-2">
-                  <Button className="w-full h-11 sm:h-14 rounded-xl sm:rounded-2xl font-black text-base sm:text-lg shadow-xl shadow-primary/20" onClick={confirmPayment}>
-                    Pay ₹99 & Confirm Booking
+                  <Button 
+                    className="w-full h-11 sm:h-14 rounded-xl sm:rounded-2xl font-black text-base sm:text-lg shadow-xl shadow-primary/20" 
+                    onClick={confirmPayment}
+                    disabled={bookVisitMutation.isPending}
+                  >
+                    {bookVisitMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Confirming...
+                      </>
+                    ) : (
+                      'Pay ₹99 & Confirm Booking'
+                    )}
                   </Button>
-                  <Button variant="ghost" className="w-full h-9 sm:h-10 rounded-xl text-muted-foreground font-medium text-[11px] sm:text-sm" onClick={() => setStep('slots')}>
+                  <Button 
+                    variant="ghost" 
+                    className="w-full h-9 sm:h-10 rounded-xl text-muted-foreground font-medium text-[11px] sm:text-sm" 
+                    onClick={() => setStep('slots')}
+                    disabled={bookVisitMutation.isPending}
+                  >
                     Go Back
                   </Button>
                 </div>

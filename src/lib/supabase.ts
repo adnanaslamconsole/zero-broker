@@ -6,14 +6,21 @@ export const supabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtqaWtzbWpnZXhoZ2xkeHNpcGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODU2MzgsImV4cCI6MjA4NDA2MTYzOH0.jmXDYy9JB7xW5wzelUqLxbAahEpCZHRpJ2CzL9z8goY';
 
+// No-op storage: prevents Supabase from writing auth tokens to LocalStorage.
+// Session management is handled exclusively by the Express backend via HttpOnly cookies.
+const noStorage = {
+  getItem: (_key: string) => null,
+  setItem: (_key: string, _value: string) => {},
+  removeItem: (_key: string) => {},
+};
+
 export const createSupabaseClient = (options?: { fetch?: typeof fetch }) => {
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
+      persistSession: false,   // CRITICAL: no tokens stored client-side
+      autoRefreshToken: false, // handled by our own refresh interval
       detectSessionInUrl: true,
-      storage: window.localStorage,
-      storageKey: 'zerobroker-auth-session',
+      storage: noStorage,
     },
     global: {
       headers: {
@@ -25,3 +32,4 @@ export const createSupabaseClient = (options?: { fetch?: typeof fetch }) => {
 };
 
 export const supabase = createSupabaseClient();
+

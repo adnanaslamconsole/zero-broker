@@ -31,6 +31,13 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { LocationAccessBanner } from '@/components/location/LocationAccessBanner';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import type { Property, PropertyFilters, ListingType, PropertyType, FurnishingType } from '@/types/property';
 import { queryClient } from '@/lib/queryClient';
 import { getItemWithTTL, setItemWithTTL, removeItem } from '@/lib/localStorageTTL';
@@ -107,15 +114,135 @@ const transformProperty = (dbProperty: any): Property => ({
   updatedAt: dbProperty.updated_at,
 });
 
+// Extracted FilterContent component for reuse in Sheet and Desktop panel
+function FilterContent({ 
+  filters, 
+  setFilters, 
+  toggleFilter 
+}: { 
+  filters: PropertyFilters; 
+  setFilters: React.Dispatch<React.SetStateAction<PropertyFilters>>;
+  toggleFilter: (key: keyof PropertyFilters, value: string | number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Property Type */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-3 block">
+          Property Type
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {propertyTypes.map((type) => (
+            <button
+              key={type.value}
+              onClick={() => toggleFilter('propertyType', type.value)}
+              className={cn(
+                'filter-pill',
+                filters.propertyType?.includes(type.value) && 'active'
+              )}
+            >
+              {type.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* BHK */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-3 block">BHK</label>
+        <div className="flex flex-wrap gap-2">
+          {bhkOptions.map((bhk) => (
+            <button
+              key={bhk}
+              onClick={() => toggleFilter('bhk', bhk)}
+              className={cn(
+                'filter-pill',
+                filters.bhk?.includes(bhk) && 'active'
+              )}
+            >
+              {bhk} BHK
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Furnishing */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-3 block">
+          Furnishing
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {furnishingOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => toggleFilter('furnishing', option.value)}
+              className={cn(
+                'filter-pill',
+                filters.furnishing?.includes(option.value) && 'active'
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Price Range */}
+      <div>
+        <label className="text-sm font-medium text-foreground mb-3 block">
+          Price Range
+        </label>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            placeholder="Min"
+            value={filters.minPrice || ''}
+            onChange={(e) =>
+              setFilters((prev) => ({
+                ...prev,
+                minPrice: e.target.value ? Number(e.target.value) : undefined,
+              }))
+            }
+            className="w-full bg-background/50"
+          />
+          <Input
+            type="number"
+            placeholder="Max"
+            value={filters.maxPrice || ''}
+            onChange={(e) =>
+              setFilters((prev) => ({
+                ...prev,
+                maxPrice: e.target.value ? Number(e.target.value) : undefined,
+              }))
+            }
+            className="w-full bg-background/50"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Properties() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map' | 'bounty'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map' | 'bounty'>('list');
   const [selectedBounty, setSelectedBounty] = useState<Property | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [mapCenter, setMapCenter] = useState<[number, number]>([12.9716, 77.5946]); // Default Bangalore
   const [mapBounds, setMapBounds] = useState<{ ne: [number, number]; sw: [number, number] } | null>(null);
+  const [lastBbox, setLastBbox] = useState<{ ne: [number, number]; sw: [number, number] } | null>(null);
+  const [showSearchArea, setShowSearchArea] = useState(false);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [radiusKm, setRadiusKm] = useState<number>(10);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   const {
     coords: userCoords,
     loading: locationLoading,
@@ -129,49 +256,47 @@ export default function Properties() {
   const { toast } = useToast();
   const hasCenteredOnUser = useRef(false);
 
-  // Filters state
-  const [filters, setFilters] = useState<PropertyFilters>({
-    listingType: (searchParams.get('type') as ListingType) || undefined,
-    propertyType: searchParams.get('property')
-      ? [searchParams.get('property') as PropertyType]
-      : [],
-    bhk: [],
-    furnishing: [],
-    minPrice: undefined,
-    maxPrice: undefined,
+  // Filters state (Category 7: God Mode Persistence)
+  const [filters, setFilters] = useState<PropertyFilters>(() => {
+    const type = searchParams.get('type') as ListingType;
+    const property = searchParams.get('property');
+    const bhk = searchParams.get('bhk')?.split(',').map(Number).filter(n => !isNaN(n)) || [];
+    const furnishing = searchParams.get('furnishing')?.split(',') as FurnishingType[] || [];
+    const minPrice = searchParams.get('minPrice');
+    const maxPrice = searchParams.get('maxPrice');
+
+    return {
+      listingType: type || undefined,
+      propertyType: property ? [property as PropertyType] : [],
+      bhk: bhk,
+      furnishing: furnishing.filter(f => ['furnished', 'semi-furnished', 'unfurnished'].includes(f)),
+      minPrice: minPrice ? Number(minPrice) : undefined,
+      maxPrice: maxPrice ? Number(maxPrice) : undefined,
+    };
   });
 
   const [userCity, setUserCity] = useState<string | null>(getItemWithTTL<string>('user_city'));
 
   // Sync URL search params with filters state
   useEffect(() => {
-    const type = searchParams.get('type') as ListingType;
-    const property = searchParams.get('property') as PropertyType;
-    const q = searchParams.get('q');
+    const params = new URLSearchParams(searchParams);
+    
+    // Add/Update URL params based on current filter state
+    if (filters.listingType) params.set('type', filters.listingType); else params.delete('type');
+    if (filters.propertyType?.length) params.set('property', filters.propertyType[0]); else params.delete('property');
+    if (filters.bhk?.length) params.set('bhk', filters.bhk.join(',')); else params.delete('bhk');
+    if (filters.furnishing?.length) params.set('furnishing', filters.furnishing.join(',')); else params.delete('furnishing');
+    if (filters.minPrice) params.set('minPrice', filters.minPrice.toString()); else params.delete('minPrice');
+    if (filters.maxPrice) params.set('maxPrice', filters.maxPrice.toString()); else params.delete('maxPrice');
+    if (searchQuery) params.set('q', searchQuery); else params.delete('q');
 
-    setFilters(prev => {
-      // Only update if they are actually different to avoid unnecessary re-renders
-      if (
-        prev.listingType === (type || undefined) &&
-        (prev.propertyType?.[0] || undefined) === (property || undefined) &&
-        searchQuery === (q || '')
-      ) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        listingType: type || undefined,
-        propertyType: property ? [property] : [],
-      };
-    });
-
-    if (q !== null && q !== searchQuery) {
-      setSearchQuery(q);
-    } else if (q === null && searchQuery !== '') {
-      setSearchQuery('');
+    // Prevent infinite loop by checking if params actually changed
+    const currentParams = searchParams.toString();
+    const nextParams = params.toString();
+    if (currentParams !== nextParams) {
+      setSearchParams(params, { replace: true });
     }
-  }, [searchParams]);
+  }, [filters, searchQuery, setSearchParams]);
 
   useEffect(() => {
     if (!userCoords) return;
@@ -179,6 +304,26 @@ export default function Properties() {
     setMapCenter([userCoords.latitude, userCoords.longitude]);
     hasCenteredOnUser.current = true;
   }, [userCoords, locationFromCache]);
+
+  const handleBoundsChange = (newBounds: { ne: [number, number]; sw: [number, number] }) => {
+    setMapBounds(newBounds);
+    
+    // Check if we should show "Search this area"
+    if (lastBbox) {
+      const dist = Math.abs(newBounds.ne[0] - lastBbox.ne[0]) + Math.abs(newBounds.ne[1] - lastBbox.ne[1]);
+      if (dist > 0.005) { // Threshold for significant movement
+        setShowSearchArea(true);
+      }
+    } else {
+      setLastBbox(newBounds);
+    }
+  };
+
+  const handleSearchArea = () => {
+    setLastBbox(mapBounds);
+    setShowSearchArea(false);
+    queryClient.invalidateQueries({ queryKey: ['properties'] });
+  };
 
   const [sortBy, setSortBy] = useState('relevance');
   const observerTarget = useRef<HTMLDivElement>(null);
@@ -206,6 +351,7 @@ export default function Properties() {
       userCoords ? Number(userCoords.longitude.toFixed(4)) : null,
       radiusKm,
       viewMode === 'map' ? mapBounds?.sw : null,
+      viewMode === 'map' ? lastBbox?.sw : null, // Trigger refetch on bbox search
       viewMode,
       userCity
     ],
@@ -438,6 +584,14 @@ export default function Properties() {
     return count;
   }, [filters]);
 
+  const scrollToProperty = (id: string) => {
+    const element = document.getElementById(`property-card-${id}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setSelectedPropertyId(id);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -463,29 +617,78 @@ export default function Properties() {
                   onChange={setSearchQuery}
                   onLocationSelect={(loc) => {
                     setMapCenter([loc.lat, loc.lon]);
-                    // If it's a city search, we might want to center the map and perhaps clear radius if it was set
+                    // If it's a city search, we might want to center the map
                     if (viewMode !== 'map') setViewMode('map');
+                    
+                    // Reset category to "All" when a new location is selected as per user request
+                    setFilters((prev) => ({ ...prev, listingType: undefined }));
+                    const params = new URLSearchParams(searchParams);
+                    params.delete('type');
+                    setSearchParams(params);
                   }}
                   className="w-full"
                 />
               </div>
               
               <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
-                <Button
-                  variant="outline"
-                  className="h-16 px-6 rounded-2xl border-border/50 bg-background/50 backdrop-blur-sm hover:bg-primary/5 hover:border-primary/30 transition-all gap-3 group/btn"
-                  onClick={() => setShowFilters(!showFilters)}
-                >
-                  <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
-                    <SlidersHorizontal className="w-4 h-4 text-primary" />
-                  </div>
-                  <span className="font-bold tracking-tight">Advanced Filters</span>
-                  {activeFilterCount > 0 && (
-                    <Badge className="bg-primary text-primary-foreground font-black px-2 py-0.5 rounded-lg text-[10px]">
-                      {activeFilterCount}
-                    </Badge>
-                  )}
-                </Button>
+                {isMobile ? (
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-16 flex-1 px-6 rounded-2xl border-border/50 bg-background/50 backdrop-blur-sm hover:bg-primary/5 hover:border-primary/30 transition-all gap-3 group/btn"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
+                          <SlidersHorizontal className="w-4 h-4 text-primary" />
+                        </div>
+                        <span className="font-bold tracking-tight">Filters</span>
+                        {activeFilterCount > 0 && (
+                          <Badge className="bg-primary text-primary-foreground font-black px-2 py-0.5 rounded-lg text-[10px]">
+                            {activeFilterCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="bottom" className="h-[85vh] p-0 rounded-t-[2rem] border-t-0 bg-card/95 backdrop-blur-xl">
+                      <SheetHeader className="p-6 border-b border-border/50 text-left">
+                        <div className="flex items-center justify-between">
+                          <SheetTitle className="text-xl font-display font-black tracking-tight">Filters</SheetTitle>
+                          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-primary font-bold">
+                            Reset All
+                          </Button>
+                        </div>
+                      </SheetHeader>
+                      <div className="p-6 overflow-y-auto h-[calc(85vh-85px)] custom-scrollbar pb-24">
+                        <FilterContent 
+                          filters={filters} 
+                          setFilters={setFilters} 
+                          toggleFilter={toggleFilter} 
+                        />
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-md border-t border-border/50">
+                        <Button className="w-full h-14 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => (document.querySelector('[data-radix-collection-item]') as any)?.click()}>
+                          Show {filteredProperties.length} Results
+                        </Button>
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="h-16 px-6 rounded-2xl border-border/50 bg-background/50 backdrop-blur-sm hover:bg-primary/5 hover:border-primary/30 transition-all gap-3 group/btn"
+                    onClick={() => setShowFilters(!showFilters)}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
+                      <SlidersHorizontal className="w-4 h-4 text-primary" />
+                    </div>
+                    <span className="font-bold tracking-tight">Advanced Filters</span>
+                    {activeFilterCount > 0 && (
+                      <Badge className="bg-primary text-primary-foreground font-black px-2 py-0.5 rounded-lg text-[10px]">
+                        {activeFilterCount}
+                      </Badge>
+                    )}
+                  </Button>
+                )}
 
                 <div className="bg-secondary/30 backdrop-blur-md rounded-2xl border border-border/30 p-1.5 flex items-center gap-1.5 h-16">
                   {[
@@ -513,6 +716,12 @@ export default function Properties() {
 
                 <Button 
                   className="h-16 px-10 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all bg-primary"
+                  onClick={() => {
+                    setFilters((prev) => ({ ...prev, listingType: undefined }));
+                    const params = new URLSearchParams(searchParams);
+                    params.delete('type');
+                    setSearchParams(params);
+                  }}
                 >
                   <Search className="w-4 h-4 mr-2" />
                   Search
@@ -523,18 +732,33 @@ export default function Properties() {
             {/* Premium Category Toggle & Quick Actions */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-6 mt-8 pt-6 border-t border-border/30">
               <div className="flex items-center gap-4 bg-muted/50 p-1.5 rounded-2xl border border-border/50 w-full md:w-auto">
+                <button
+                  onClick={() => {
+                    setFilters((prev) => ({ ...prev, listingType: undefined }));
+                    const params = new URLSearchParams(searchParams);
+                    params.delete('type');
+                    setSearchParams(params);
+                  }}
+                  className={cn(
+                    'flex-1 md:flex-none px-8 py-3 rounded-[1.15rem] text-sm font-black uppercase tracking-wider transition-all duration-300',
+                    filters.listingType === undefined
+                      ? 'bg-background text-primary shadow-xl shadow-black/5 ring-1 ring-black/5 scale-105'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-background/30'
+                  )}
+                >
+                  All
+                </button>
                 {['rent', 'sale'].map((type) => (
                   <button
                     key={type}
                     onClick={() => {
-                      const newType = filters.listingType === type ? undefined : (type as ListingType);
+                      const newType = type as ListingType;
                       setFilters((prev) => ({
                         ...prev,
                         listingType: newType,
                       }));
                       const params = new URLSearchParams(searchParams);
-                      if (newType) params.set('type', newType);
-                      else params.delete('type');
+                      params.set('type', newType);
                       setSearchParams(params);
                     }}
                     className={cn(
@@ -544,7 +768,7 @@ export default function Properties() {
                         : 'text-muted-foreground hover:text-foreground hover:bg-background/30'
                     )}
                   >
-                    For {type === 'rent' ? 'Rent' : 'Sale'}
+                    {type === 'rent' ? 'Rent' : 'Sale'}
                   </button>
                 ))}
               </div>
@@ -601,13 +825,13 @@ export default function Properties() {
             </div>
           </div>
 
-          {/* Filters Panel */}
-          {showFilters && (
+          {/* Desktop Filters Panel */}
+          {!isMobile && showFilters && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-card rounded-xl border border-border p-4 sm:p-6 mb-6 overflow-hidden"
+              className="bg-card rounded-xl border border-border p-4 sm:p-6 mb-6 overflow-hidden shadow-lg"
             >
               <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <h3 className="font-semibold text-foreground">Filters</h3>
@@ -616,101 +840,11 @@ export default function Properties() {
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* Property Type */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-3 block">
-                    Property Type
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {propertyTypes.map((type) => (
-                      <button
-                        key={type.value}
-                        onClick={() => toggleFilter('propertyType', type.value)}
-                        className={cn(
-                          'filter-pill',
-                          filters.propertyType?.includes(type.value) && 'active'
-                        )}
-                      >
-                        {type.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* BHK */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-3 block">BHK</label>
-                  <div className="flex flex-wrap gap-2">
-                    {bhkOptions.map((bhk) => (
-                      <button
-                        key={bhk}
-                        onClick={() => toggleFilter('bhk', bhk)}
-                        className={cn(
-                          'filter-pill',
-                          filters.bhk?.includes(bhk) && 'active'
-                        )}
-                      >
-                        {bhk} BHK
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Furnishing */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-3 block">
-                    Furnishing
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {furnishingOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => toggleFilter('furnishing', option.value)}
-                        className={cn(
-                          'filter-pill',
-                          filters.furnishing?.includes(option.value) && 'active'
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Price Range */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-3 block">
-                    Price Range
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      placeholder="Min"
-                      value={filters.minPrice || ''}
-                      onChange={(e) =>
-                        setFilters((prev) => ({
-                          ...prev,
-                          minPrice: e.target.value ? Number(e.target.value) : undefined,
-                        }))
-                      }
-                      className="w-full"
-                    />
-                    <Input
-                      type="number"
-                      placeholder="Max"
-                      value={filters.maxPrice || ''}
-                      onChange={(e) =>
-                        setFilters((prev) => ({
-                          ...prev,
-                          maxPrice: e.target.value ? Number(e.target.value) : undefined,
-                        }))
-                      }
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              </div>
+              <FilterContent 
+                filters={filters} 
+                setFilters={setFilters} 
+                toggleFilter={toggleFilter} 
+              />
             </motion.div>
           )}
 
@@ -756,35 +890,28 @@ export default function Properties() {
                 </select>
               </div>
 
-              {/* View Toggle */}
-              <div className="flex border border-border rounded-lg overflow-hidden bg-card">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={cn(
-                    'p-2 transition-colors',
-                    viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
-                  )}
-                >
-                  <Grid3X3 className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={cn(
-                    'p-2 transition-colors',
-                    viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
-                  )}
-                >
-                  <List className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setViewMode('map')}
-                  className={cn(
-                    'p-2 transition-colors',
-                    viewMode === 'map' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
-                  )}
-                >
-                  <MapIcon className="w-5 h-5" />
-                </button>
+              {/* Premium View Switcher */}
+              <div className="flex bg-muted/30 p-1.5 rounded-2xl border border-border/40 backdrop-blur-md">
+                {[
+                  { id: 'list', label: 'List', icon: List },
+                  { id: 'grid', label: 'Grid', icon: Grid3X3 },
+                  { id: 'map', label: 'Map', icon: MapIcon },
+                  { id: 'bounty', label: 'Bounty', icon: Target },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    onClick={() => setViewMode(mode.id as any)}
+                    className={cn(
+                      'flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300',
+                      viewMode === mode.id
+                        ? 'bg-background text-primary shadow-xl shadow-black/5 ring-1 ring-black/5 scale-105'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
+                    )}
+                  >
+                    <mode.icon className={cn("w-4 h-4", viewMode === mode.id ? "text-primary" : "text-muted-foreground/60")} />
+                    <span className="hidden lg:inline-block">{mode.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -834,15 +961,74 @@ export default function Properties() {
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20">
               <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
-              <p className="text-muted-foreground animate-pulse">Loading amazing properties...</p>
+              <p className="text-muted-foreground animate-pulse font-bold">Discovering amazing matches...</p>
             </div>
           ) : viewMode === 'map' ? (
-            <div className="h-[calc(100vh-300px)] min-h-[400px] sm:h-[600px] rounded-xl overflow-hidden border border-border relative z-0">
+            <div className="h-[calc(100vh-280px)] sm:h-[calc(100vh-280px)] sticky top-24 rounded-[2.5rem] overflow-hidden border border-border/50 shadow-2xl relative">
               <PropertyMap
                 properties={filteredProperties}
                 center={mapCenter}
-                onBoundsChange={setMapBounds}
+                onBoundsChange={handleBoundsChange}
+                selectedPropertyId={selectedPropertyId}
+                onMarkerClick={(p) => {
+                  scrollToProperty(p.id);
+                  if (isMobile) {
+                    document.getElementById('mobile-property-sheet')?.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
               />
+              
+              {showSearchArea && (
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 animate-in fade-in slide-in-from-top-4 duration-300">
+                  <Button 
+                    onClick={handleSearchArea}
+                    className="bg-background/90 backdrop-blur-md text-primary hover:bg-background border-none shadow-2xl rounded-full px-8 py-4 font-black text-xs uppercase tracking-widest gap-2 group ring-2 ring-primary/20"
+                  >
+                    <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                    Search this area
+                  </Button>
+                </div>
+              )}
+
+              {isMobile && (
+                <motion.div 
+                  initial={{ y: '80%' }}
+                  animate={{ y: selectedPropertyId ? '40%' : '80%' }}
+                  drag="y"
+                  dragConstraints={{ top: 0, bottom: 0 }}
+                  dragElastic={0.2}
+                  className="absolute bottom-0 left-0 right-0 z-[1000] bg-background/95 backdrop-blur-3xl rounded-t-[3rem] shadow-[0_-20px_40px_rgba(0,0,0,0.1)] border-t border-border/50 overflow-hidden flex flex-col h-[85%]"
+                  id="mobile-property-sheet"
+                >
+                  <div className="w-12 h-1.5 bg-muted-foreground/20 rounded-full mx-auto my-4 shrink-0" />
+                  <div className="flex-1 overflow-y-auto px-4 pb-12">
+                    <div className="flex flex-col gap-4">
+                      {filteredProperties.map((property) => (
+                        <div 
+                          key={property.id} 
+                          id={`property-card-${property.id}`}
+                          className={cn(
+                            "transition-all duration-300",
+                            selectedPropertyId === property.id ? "scale-[1.02]" : ""
+                          )}
+                          onClick={() => setSelectedPropertyId(property.id)}
+                        >
+                          <PropertyCard
+                            property={property}
+                            variant="horizontal"
+                            radiusKm={radiusKm}
+                          />
+                        </div>
+                      ))}
+                      {hasNextPage && (
+                        <div ref={observerTarget} className="h-20 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
             </div>
           ) : viewMode === 'bounty' ? (
             <div className="space-y-8">
@@ -852,10 +1038,12 @@ export default function Properties() {
                 </div>
                 <div>
                   <h2 className="text-3xl font-black tracking-tight text-amber-600">Neighborhood Bounty Board</h2>
-                  <p className="text-amber-700/70 font-medium">Verified residents get paid for auditing nearby listings. Invalidate fakes, earn rewards.</p>
+                  <p className="text-amber-700/70 font-medium font-display">Verified residents get paid for auditing nearby listings.</p>
                 </div>
-                <div className="ml-auto flex items-center gap-3 bg-white/50 p-2 rounded-2xl">
-                  <div className="px-4 py-2 bg-amber-500 text-white font-black rounded-xl shadow-lg">₹{(filteredProperties.filter(p => p.bountyReward).length * 50).toLocaleString()} Active Bounties</div>
+                <div className="ml-auto">
+                    <Button variant="outline" className="h-14 px-8 border-amber-500/30 text-amber-600 font-black rounded-2xl bg-white/50 backdrop-blur-md">
+                        VIEW RULES
+                    </Button>
                 </div>
               </div>
 
@@ -864,7 +1052,7 @@ export default function Properties() {
                   property={selectedBounty} 
                   onSuccess={() => {
                     setSelectedBounty(null);
-                    // refetch logic
+                    queryClient.invalidateQueries({ queryKey: ['properties'] });
                   }}
                   onCancel={() => setSelectedBounty(null)}
                 />
@@ -879,35 +1067,58 @@ export default function Properties() {
           ) : filteredProperties.length > 0 ? (
             <div
               className={cn(
-                viewMode === 'grid'
-                  ? 'responsive-grid'
-                  : 'space-y-4'
+                "grid gap-8",
+                viewMode === 'grid' ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : "grid-cols-1"
               )}
             >
-              {filteredProperties.map((property, index) => (
-                <PropertyCard
-                  key={`${property.id}-${index}`}
-                  property={property}
-                  variant={viewMode === 'list' ? 'horizontal' : 'default'}
-                  radiusKm={radiusKm}
-                />
+              {filteredProperties.map((property) => (
+                <div 
+                  key={property.id} 
+                  id={`property-card-${property.id}`}
+                  onMouseEnter={() => setSelectedPropertyId(property.id)}
+                  onMouseLeave={() => setSelectedPropertyId(null)}
+                  className={cn(
+                    "transition-all duration-500 rounded-[2rem]",
+                    selectedPropertyId === property.id ? "ring-2 ring-primary ring-offset-8 scale-[1.02] shadow-[0_40px_80px_-15px_rgba(255,77,28,0.2)]" : ""
+                  )}
+                >
+                  <PropertyCard
+                    property={property}
+                    variant={viewMode === 'list' ? 'horizontal' : 'default'}
+                    radiusKm={radiusKm}
+                  />
+                </div>
               ))}
-
-              {/* Infinite Scroll Loader */}
-              <div ref={observerTarget} className="col-span-full py-8 flex justify-center w-full">
-                {isFetchingNextPage && <Loader2 className="w-8 h-8 animate-spin text-primary" />}
+              
+              <div 
+                ref={observerTarget} 
+                className="col-span-full py-12 flex flex-col items-center justify-center border-t border-dashed border-border/50 mt-8"
+              >
+                {hasNextPage ? (
+                  <>
+                    <Loader2 className="w-10 h-10 animate-spin text-primary/30 mb-4" />
+                    <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/50">Fetching more properties</p>
+                  </>
+                ) : (
+                  <p className="text-sm font-bold text-muted-foreground/30">You've explored all properties in this area</p>
+                )}
               </div>
             </div>
           ) : (
-            <div className="text-center py-12 sm:py-16">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-                <Search className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground" />
+            <div className="text-center py-20 px-6 bg-muted/20 rounded-[3rem] border border-dashed border-border/50">
+              <div className="w-24 h-24 bg-background/80 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-2xl border border-white/20">
+                <Search className="w-10 h-10 text-muted-foreground/40" />
               </div>
-              <h3 className="text-lg sm:text-xl font-semibold text-foreground mb-2">No properties found</h3>
-              <p className="text-sm text-muted-foreground mb-6">
-                Try adjusting your filters or search criteria
+              <h3 className="text-3xl font-black text-foreground mb-4 tracking-tight">No properties found</h3>
+              <p className="text-muted-foreground mb-10 max-w-sm mx-auto font-medium">
+                Try widening your search radius or adjusting your filters to find more properties.
               </p>
-              <Button onClick={clearFilters}>Clear all filters</Button>
+              <Button 
+                onClick={clearFilters}
+                className="h-14 px-10 rounded-2xl font-black uppercase text-xs tracking-widest"
+              >
+                Clear all filters
+              </Button>
             </div>
           )}
         </div>

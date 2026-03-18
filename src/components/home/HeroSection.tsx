@@ -15,9 +15,10 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LocationSearch } from '@/components/property/LocationSearch';
 
-type TabType = 'rent' | 'buy' | 'pg' | 'commercial';
+type TabType = 'all' | 'rent' | 'buy' | 'pg' | 'commercial';
 
 const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
+  { id: 'all', label: 'All', icon: Search },
   { id: 'rent', label: 'Rent', icon: Key },
   { id: 'buy', label: 'Buy', icon: Home },
   { id: 'pg', label: 'PG/Hostel', icon: Building2 },
@@ -33,7 +34,7 @@ const stats = [
 
 export function HeroSection() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<TabType>('rent');
+  const [activeTab, setActiveTab] = useState<TabType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
 
@@ -42,7 +43,10 @@ export function HeroSection() {
     
     const params = new URLSearchParams();
     params.set('q', searchQuery);
-    params.set('type', activeTab);
+    
+    if (activeTab !== 'all') {
+      params.set('type', activeTab);
+    }
     
     if (selectedLocation) {
       params.set('lat', selectedLocation.lat.toString());
@@ -100,7 +104,7 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="text-4xl xs:text-5xl sm:text-7xl lg:text-8xl font-display font-black text-white mb-6 tracking-tight leading-[0.95]"
+            className="text-3xl xxs:text-4xl xs:text-5xl sm:text-7xl lg:text-8xl font-display font-black text-white mb-6 tracking-tight leading-[0.95]"
           >
             Find Your <span className="text-accent underline decoration-accent/30 underline-offset-[12px]">Perfect Home</span>
             <br />

@@ -198,15 +198,15 @@ describe('AuthContext Security Features', () => {
     expect(result.current.user?.profile.name).toBe('Demo User');
 
     await act(async () => {
-      await result.current.updateProfile({ name: 'Updated Name', mobile: '+919876543210' });
+      await result.current.updateProfile({ name: 'Updated Name', mobile: '+917897773335' });
     });
 
     expect(result.current.user?.profile.name).toBe('Updated Name');
-    expect(result.current.user?.profile.mobile).toBe('+919876543210');
+    expect(result.current.user?.profile.mobile).toBe('+917897773335');
 
     const stored = JSON.parse(localStorage.getItem('zerobroker-demo-session') || '{}');
     expect(stored.name).toBe('Updated Name');
-    expect(stored.mobile).toBe('+919876543210');
+    expect(stored.mobile).toBe('+917897773335');
   });
 
   test('uploadAvatar validates file type and updates avatarUrl for demo user', async () => {

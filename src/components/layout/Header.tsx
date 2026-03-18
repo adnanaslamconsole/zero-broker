@@ -14,12 +14,20 @@ import {
   ShieldCheck,
   Heart,
   LogOut,
+  Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 const navLinks = [
   {
@@ -101,8 +109,73 @@ export function Header() {
     <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-xl border-b border-border/50 transition-all duration-300">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 lg:h-20">
+          {/* Mobile Menu Trigger */}
+          <div className="flex lg:hidden mr-2">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-10 w-10 text-foreground group" aria-label="Open menu">
+                  <Menu className="w-6 h-6 group-hover:text-primary transition-colors" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[300px] sm:w-[350px] p-0 border-r-0 bg-card/95 backdrop-blur-xl">
+                <SheetHeader className="p-6 border-b border-border/50 text-left">
+                  <SheetTitle className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                      <Home className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="text-xl font-display font-black tracking-tight">ZeroBroker</span>
+                  </SheetTitle>
+                </SheetHeader>
+                <div className="flex flex-col py-4 h-[calc(100vh-85px)] overflow-y-auto custom-scrollbar">
+                  {navLinks.map((link) => (
+                    <div key={link.label} className="px-2">
+                      {link.submenu ? (
+                        <div className="py-2">
+                          <div className="px-4 py-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                            <link.icon className="w-3.5 h-3.5" />
+                            {link.label}
+                          </div>
+                          <div className="grid grid-cols-1 gap-1 mt-1">
+                            {link.submenu.map((sub) => (
+                              <Link
+                                key={sub.label}
+                                to={sub.href}
+                                className="flex items-center gap-3 px-6 py-3 rounded-xl text-sm font-bold text-foreground/80 hover:bg-primary/5 hover:text-primary transition-all active:scale-95"
+                              >
+                                <div className="w-1.5 h-1.5 rounded-full bg-border" />
+                                {sub.label}
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <Link
+                          to={link.href}
+                          className="flex items-center gap-3 px-4 py-4 rounded-xl text-sm font-bold text-foreground/80 hover:bg-primary/5 hover:text-primary transition-all active:scale-95"
+                        >
+                          <link.icon className="w-5 h-5 opacity-60" />
+                          {link.label}
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                  
+                  <div className="mt-auto p-4 border-t border-border/50 bg-secondary/10">
+                    <Button 
+                      className="w-full h-12 rounded-xl font-bold gap-2 shadow-lg shadow-primary/20"
+                      onClick={() => navigate('/post-property')}
+                    >
+                      <Plus className="w-5 h-5" />
+                      Post Property
+                    </Button>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-3 group shrink-0" aria-label="ZeroBroker Home">
+          <Link to="/" className="flex items-center gap-2 sm:gap-3 group shrink-0" aria-label="ZeroBroker Home">
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-accent flex items-center justify-center transition-all duration-500 group-hover:rotate-6 group-hover:scale-110 shadow-lg shadow-primary/20">
               <Home className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
             </div>

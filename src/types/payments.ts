@@ -4,8 +4,8 @@ export type PaymentStatus = 'pending' | 'success' | 'failed' | 'refunded';
 
 export interface Payment {
   id: string;
-  userId: string;
-  ownerId?: string;
+  userid: string;
+  ownerid?: string;
   amount: number;
   currency: 'INR';
   method: PaymentMethod;
@@ -28,7 +28,7 @@ export interface Payment {
 export interface AuditLog {
   timestamp: string;
   action: string;
-  actorId: string;
+  actorid: string;
   details: string;
   reference?: string;
 }

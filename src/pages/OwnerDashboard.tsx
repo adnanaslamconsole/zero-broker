@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Building2, ArrowUpRight } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { listProperties, updatePropertyListing } from '@/lib/mockApi';
@@ -51,7 +52,7 @@ export default function OwnerDashboard() {
       const { data: payments, error } = await supabase
         .from('payments')
         .select('*')
-        .eq('ownerId', user.profile.id)
+        .eq('ownerid', user.profile.id)
         .eq('purpose', 'site-visit-token');
 
       if (error || !payments?.length) {
@@ -59,8 +60,8 @@ export default function OwnerDashboard() {
         return [
           {
             id: 'pay_1',
-            userId: 'tenant_1',
-            ownerId: user.profile.id,
+            userid: 'tenant_1',
+            ownerid: user.profile.id,
             amount: 99,
             currency: 'INR',
             method: 'upi',
@@ -71,16 +72,16 @@ export default function OwnerDashboard() {
             gatewayTransactionId: 'pay_Okw9S2K8L1',
             escrowStatus: 'held',
             auditTrail: [
-              { timestamp: new Date().toISOString(), action: 'Payment Initiated', actorId: 'tenant_1', details: 'UPI Payment' },
-              { timestamp: new Date().toISOString(), action: 'Escrow Locked', actorId: 'system', details: 'Funds held in IDFC Escrow' }
+              { timestamp: new Date().toISOString(), action: 'Payment Initiated', actorid: 'tenant_1', details: 'UPI Payment' },
+              { timestamp: new Date().toISOString(), action: 'Escrow Locked', actorid: 'system', details: 'Funds held in IDFC Escrow' }
             ],
             createdAt: new Date(Date.now() - 3600000).toISOString(),
             updatedAt: new Date().toISOString(),
           },
           {
             id: 'pay_2',
-            userId: 'tenant_2',
-            ownerId: user.profile.id,
+            userid: 'tenant_2',
+            ownerid: user.profile.id,
             amount: 99,
             currency: 'INR',
             method: 'card',
@@ -91,8 +92,8 @@ export default function OwnerDashboard() {
             gatewayTransactionId: 'pay_P1m2N3B4V5',
             escrowStatus: 'released',
             auditTrail: [
-              { timestamp: new Date(Date.now() - 86400000).toISOString(), action: 'Payment Received', actorId: 'tenant_2', details: 'Visa Card' },
-              { timestamp: new Date().toISOString(), action: 'Escrow Released', actorId: 'system', details: 'Visit confirmed by OTP' }
+              { timestamp: new Date(Date.now() - 86400000).toISOString(), action: 'Payment Received', actorid: 'tenant_2', details: 'Visa Card' },
+              { timestamp: new Date().toISOString(), action: 'Escrow Released', actorid: 'system', details: 'Visit confirmed by OTP' }
             ],
             createdAt: new Date(Date.now() - 86400000).toISOString(),
             updatedAt: new Date().toISOString(),

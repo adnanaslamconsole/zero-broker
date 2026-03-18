@@ -237,10 +237,27 @@ export default function PostProperty() {
     const files = e.target.files;
     if (files) {
       const fileArray = Array.from(files);
-      setUploadedImages(prev => [...prev, ...fileArray]);
+      
+      // God Mode Check: File Size & Type (Category 4)
+      const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+      const validFiles = fileArray.filter(file => {
+        if (!file.type.startsWith('image/')) {
+          toast.error(`Invalid file type: ${file.name}. Only images are allowed.`);
+          return false;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error(`File too large: ${file.name}. Max size is 10MB.`);
+          return false;
+        }
+        return true;
+      });
+
+      if (validFiles.length === 0) return;
+
+      setUploadedImages(prev => [...prev, ...validFiles]);
 
       // Create preview URLs
-      const newUrls = fileArray.map(file => URL.createObjectURL(file));
+      const newUrls = validFiles.map(file => URL.createObjectURL(file));
       setImageUrls(prev => [...prev, ...newUrls]);
     }
   };
@@ -258,45 +275,43 @@ export default function PostProperty() {
       return imageUrls; // Return local preview URLs for demo
     }
 
-    const urls: string[] = [];
-    setUploadingImages(true);
+    const uploadPromises = uploadedImages.map(async (file) => {
+      console.log(`Starting upload for file: ${file.name}`);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${crypto.randomUUID()}.${fileExt}`;
+      const filePath = `${user?.profile.id}/${fileName}`;
+
+      const { error: uploadError, data } = await supabase.storage
+        .from('property-images')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error(`Upload error for file ${file.name}:`, uploadError);
+        if (uploadError.message?.includes('Bucket not found')) {
+          throw new Error("Storage bucket 'property-images' not found. Please create it in your Supabase dashboard.");
+        }
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('property-images')
+        .getPublicUrl(data.path);
+
+      console.log(`Upload success for file ${file.name}. URL: ${publicUrlData.publicUrl}`);
+      return publicUrlData.publicUrl;
+    });
 
     try {
-      console.log(`Starting upload for ${uploadedImages.length} images...`);
-      for (const [index, file] of uploadedImages.entries()) {
-        console.log(`Uploading image ${index + 1}/${uploadedImages.length}: ${file.name}`);
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${crypto.randomUUID()}.${fileExt}`;
-        const filePath = `${user?.profile.id}/${fileName}`;
-
-        const { error: uploadError, data } = await supabase.storage
-          .from('property-images')
-          .upload(filePath, file);
-
-        if (uploadError) {
-          console.error(`Upload error for file ${file.name}:`, uploadError);
-          if (uploadError.message?.includes('Bucket not found')) {
-            throw new Error("Storage bucket 'property-images' not found. Please create it in your Supabase dashboard.");
-          }
-          throw uploadError;
-        }
-
-        const { data: publicUrlData } = supabase.storage
-          .from('property-images')
-          .getPublicUrl(data.path);
-
-        console.log(`Upload success for file ${file.name}. URL: ${publicUrlData.publicUrl}`);
-        urls.push(publicUrlData.publicUrl);
-      }
+      console.log(`Parallelizing upload for ${uploadedImages.length} images...`);
+      const urls = await Promise.all(uploadPromises);
+      return urls;
     } catch (error) {
-      console.error('Fatal error in uploadImagesToStorage:', error);
+      console.error('Fatal error in parallel uploadImagesToStorage:', error);
       toast.error('Failed to upload images. Please try again.');
-      throw error; // Rethrow to let onSubmit handle it
+      throw error;
     } finally {
       setUploadingImages(false);
     }
-
-    return urls;
   };
 
   const onSubmit = async (data: PropertyFormValues) => {
@@ -308,7 +323,14 @@ export default function PostProperty() {
       return;
     }
 
-    // Validation for photos in the final step
+    // Validation for photos & location (God Mode Category 3 & 4)
+    if (!selectedLocation && !user.profile.isDemo) {
+      console.warn('Submission blocked: No location coordinates');
+      toast.error('Please select a specific location on the map for your property');
+      setCurrentStep(2); // Jump back to location step
+      return;
+    }
+
     if (uploadedImages.length === 0 && !user.profile.isDemo) {
       console.warn('Submission blocked: No images uploaded');
       toast.error('Please upload at least one property photo');
@@ -317,13 +339,6 @@ export default function PostProperty() {
 
     console.log('Setting isSubmitting to true');
     setIsSubmitting(true);
-
-    // Safeguard timeout to reset 'Posting' state if something hangs indefinitely
-    const submissionTimeout = setTimeout(() => {
-      console.error('CRITICAL: Submission timed out after 60 seconds');
-      setIsSubmitting(false);
-      toast.error('Posting is taking longer than expected. Please check your internet and try again.');
-    }, 60000);
 
     try {
       console.log('Starting submission flow for user:', user.profile.id);
@@ -336,7 +351,6 @@ export default function PostProperty() {
         console.log('Demo mode detected (Free), simulating delay...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         toast.success('Demo Property posted successfully!');
-        clearTimeout(submissionTimeout);
         navigate('/properties');
         return;
       }
@@ -390,13 +404,11 @@ export default function PostProperty() {
       queryClient.invalidateQueries({ queryKey: ['owner-properties'] });
 
       offlineStorage.clearDraft();
-      console.log('Step 3 Complete. Navigating...');
+      console.log('Step 3 Complete: Draft cleared. Navigating to properties list...');
       
-      clearTimeout(submissionTimeout);
       navigate('/properties');
     } catch (error) {
       console.error('CATCH: Submission process failed:', error);
-      clearTimeout(submissionTimeout);
       logError(error, { action: 'property.create' });
       toast.error(getUserFriendlyErrorMessage(error, { action: 'property.create' }) || 'Failed to post property');
     } finally {
@@ -473,8 +485,8 @@ export default function PostProperty() {
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Progress value={(usedListings / maxListings) * 100} className="h-2.5 rounded-full bg-secondary" />
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                    <Progress value={(usedListings / maxListings) * 100} className="h-2 sm:h-2.5 rounded-full bg-secondary" />
+                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
                       <span>Used: {usedListings}</span>
                       <span>Total: {maxListings}</span>
                     </div>
@@ -500,7 +512,7 @@ export default function PostProperty() {
                 >
                   <div 
                     className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 relative",
+                      "w-10 h-10 xxs:w-11 xxs:h-11 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center border-2 transition-all duration-300 relative",
                       step.id < currentStep 
                         ? "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/20"
                         : step.id === currentStep
@@ -509,9 +521,9 @@ export default function PostProperty() {
                     )}
                   >
                     {step.id < currentStep ? (
-                      <CheckCircle2 className="w-6 h-6" />
+                      <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
                     ) : (
-                      <step.icon className="w-5 h-5" />
+                      <step.icon className="w-4 h-4 sm:w-5 sm:h-5" />
                     )}
                     {step.id === currentStep && (
                       <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full animate-ping" />
@@ -530,8 +542,8 @@ export default function PostProperty() {
         )}
 
         {!isLimitReached ? (
-          <Card className="border-border/40 shadow-2xl shadow-primary/5 rounded-[2.5rem] overflow-hidden bg-card/80 backdrop-blur-md">
-            <CardContent className="p-8 sm:p-12">
+          <Card className="border-border/40 shadow-2xl shadow-primary/5 rounded-[1.5rem] sm:rounded-[2.5rem] overflow-hidden bg-card/80 backdrop-blur-md">
+            <CardContent className="p-5 sm:p-12">
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-10">
                   {/* Step 1: Basic Info */}

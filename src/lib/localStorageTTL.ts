@@ -59,6 +59,8 @@ export function removeItem(key: string): void {
  * This can be run on app initialization.
  */
 export function clearExpiredItems(): void {
+  const keysToRemove: string[] = [];
+  
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key) continue;
@@ -71,13 +73,21 @@ export function clearExpiredItems(): void {
       if (data && typeof data === 'object' && 'expiry' in data) {
         const now = Date.now();
         if (now > data.expiry) {
-          localStorage.removeItem(key);
+          keysToRemove.push(key);
         }
       }
     } catch (e) {
       // Not a JSON or not a TTL object, ignore
     }
   }
+
+  keysToRemove.forEach(k => {
+    try {
+      localStorage.removeItem(k);
+    } catch (e) {
+      // Ignore
+    }
+  });
 }
 
 /**

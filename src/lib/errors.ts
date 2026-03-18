@@ -28,7 +28,15 @@ const constraintMessageOverrides: Record<string, string> = {
   profiles_mobile_key: 'This mobile number is already in use. Try a different number.',
   profiles_email_key: 'This email is already in use. Try signing in instead.',
   properties_price_check: 'Price must be a positive value.',
+  properties_price_positive: 'Property price must be greater than zero.',
   properties_area_check: 'Area must be a positive value.',
+  properties_latitude_range: 'Invalid property location. Latitude must be between -90 and 90.',
+  properties_longitude_range: 'Invalid property location. Longitude must be between -180 and 180.',
+  tenant_not_owner: 'Security Violation: Owners cannot book their own property.',
+  visit_bookings_tenant_not_owner: 'Security Violation: Owners cannot book their own property.',
+  visit_bookings_visit_date_not_past: 'Invalid Date: You cannot book a visit in the past.',
+  unique_active_booking_per_tenant: 'Duplicate Booking: You already have an active visit scheduled for this property.',
+  unique_slot_occupancy: 'Race Condition: This slot was just booked by another user. Please pick another time.',
 };
 
 const columnFriendlyNames: Record<string, string> = {

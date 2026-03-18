@@ -18,6 +18,8 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { forceDeepClear } from '@/lib/cacheSync';
+import { Settings, RefreshCcw, Database } from 'lucide-react';
 
 type BookingForOTP = {
   id: string;
@@ -785,9 +787,9 @@ export default function Profile() {
                       <Edit2 className="w-4 h-4" /> Edit Profile
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="rounded-2xl sm:max-w-md">
+                  <DialogContent className="rounded-2xl sm:max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader><DialogTitle className="font-black text-2xl tracking-tight">Edit Profile</DialogTitle></DialogHeader>
-                    <div className="space-y-4 py-4">
+                    <div className="space-y-4 py-4 px-1">
                       <div className="space-y-2">
                         <Label htmlFor="edit-name" className="text-[10px] font-black uppercase tracking-wider text-muted-foreground px-1">Full Name</Label>
                         <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} className="rounded-xl min-h-[44px] font-bold" />
@@ -847,7 +849,7 @@ export default function Profile() {
             <Tabs defaultValue={defaultTab} onValueChange={handleTabChange} className="w-full">
               <div className="relative mb-6 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scroll-smooth">
                 <TabsList className="w-full h-auto p-1.5 bg-secondary/50 backdrop-blur-sm rounded-2xl flex overflow-x-auto no-scrollbar justify-start items-center gap-1.5 border border-border/40">
-                  {['activity', 'properties', 'bookings', 'saved', 'availability', 'verification'].map((tab) => (
+                  {['activity', 'properties', 'bookings', 'saved', 'availability', 'verification', 'settings'].map((tab) => (
                     <TabsTrigger key={tab} value={tab} className="rounded-xl py-3 px-6 text-xs font-black uppercase tracking-widest min-w-[140px] transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=active]:shadow-primary/25">
                       {tab}
                     </TabsTrigger>
@@ -1125,6 +1127,49 @@ export default function Profile() {
                     </div>
                   </div>
                 )}
+              </TabsContent>
+
+              <TabsContent value="settings" className="space-y-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Settings className="w-6 h-6 text-foreground" />
+                  <h3 className="text-xl font-black tracking-tight">Application Settings</h3>
+                </div>
+
+                <div className="grid gap-6">
+                  <div className="bg-card border border-border/50 rounded-2xl p-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-5"><Database className="w-24 h-24 rotate-12" /></div>
+                    <div className="relative z-10">
+                      <h4 className="text-lg font-black text-foreground mb-2">Repair Application</h4>
+                      <p className="text-muted-foreground text-sm font-medium mb-6 max-w-md">
+                        If you're experiencing issues with stale data, loading errors, or API timeouts, 
+                        using this tool will safely clear all local cache and refresh the application.
+                      </p>
+                      
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" className="gap-2 border-destructive/20 text-destructive hover:bg-destructive/10 rounded-xl font-bold">
+                            <RefreshCcw className="w-4 h-4" /> Repair & Clear Cache
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="rounded-2xl sm:max-w-md">
+                          <DialogHeader>
+                            <DialogTitle className="font-black text-xl tracking-tight">Deep System Repair</DialogTitle>
+                            <DialogDescription className="font-medium pt-2">
+                              This will clear all LocalStorage, SessionStorage, and TanStack Query Cache. 
+                              You will be logged out and the page will reload. 
+                              Use this as a last resort to fix persistent errors.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DialogFooter className="pt-4">
+                            <Button variant="destructive" onClick={() => forceDeepClear()} className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-destructive/20">
+                              Confirm Deep Repair
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                </div>
               </TabsContent>
             </Tabs>
           </div>

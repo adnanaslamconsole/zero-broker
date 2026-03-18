@@ -1,13 +1,43 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { UserAccountSnapshot, UserProfile, VerificationStatus } from '@/types/user';
+import { authApi, AuthUser } from '@/lib/authApi';
+import type { VerificationStatus } from '@/types/user';
 import { toast } from 'sonner';
 import { offlineStorage } from '@/lib/offlineStorage';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 import { assertEmailNotDisposable, isValidEmail } from '@/lib/disposableEmailGuard';
 import { abortAllRequests } from '@/lib/requestAbort';
 import { queryClient } from '@/lib/queryClient';
-import { VERSION_KEY, clearAllAppData } from '@/lib/cacheSync';
+import { clearAllAppData } from '@/lib/cacheSync';
+
+// ------------------------------------------------------------------
+// Types
+// ------------------------------------------------------------------
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email?: string;
+  mobile?: string | null;
+  avatarUrl?: string | null;
+  roles: string[];
+  primaryRole: string;
+  kycStatus: string;
+  kycDocuments: unknown[];
+  trustScore: number;
+  isBlocked: boolean;
+  isDemo: boolean;
+  isPaid?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserAccountSnapshot {
+  profile: UserProfile;
+  savedSearches: unknown[];
+  favorites: unknown[];
+  recentActivity: unknown[];
+}
 
 interface AuthContextValue {
   user: UserAccountSnapshot | null;
@@ -23,7 +53,6 @@ interface AuthContextValue {
   updateKycStatus: (status: VerificationStatus) => void;
   uploadAvatar: (file: File) => Promise<string>;
   logout: () => Promise<void>;
-  // MFA methods
   enrollMfa: () => Promise<{ qrCode: string; secret: string }>;
   verifyAndEnableMfa: (code: string, factorId: string) => Promise<void>;
   unenrollMfa: (factorId: string) => Promise<void>;
@@ -31,27 +60,382 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// ------------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------------
+
+function toUserAccount(authUser: AuthUser): UserAccountSnapshot {
+  const profile: UserProfile = {
+    id: authUser.id,
+    name: authUser.name,
+    email: authUser.email,
+    mobile: authUser.mobile,
+    avatarUrl: authUser.avatarUrl,
+    roles: authUser.roles,
+    primaryRole: authUser.primaryRole,
+    kycStatus: authUser.kycStatus,
+    kycDocuments: [],
+    trustScore: authUser.trustScore,
+    isBlocked: authUser.isBlocked,
+    isDemo: authUser.isDemo,
+    isPaid: authUser.isPaid,
+    createdAt: authUser.createdAt,
+    updatedAt: authUser.updatedAt,
+  };
+  return { profile, savedSearches: [], favorites: [], recentActivity: [] };
+}
+
+function buildDemoProfile(identifier: string, name?: string, role?: string, isPaid = false): UserProfile {
+  const demoUserId =
+    identifier === 'paid-owner@demo.com'
+      ? 'd0000000-0000-0000-0000-000000000001'
+      : identifier === 'admin@demo.com'
+      ? 'a0000000-0000-0000-0000-000000000001'
+      : '00000000-0000-0000-0000-000000000000';
+
+  const defaultName =
+    identifier === 'paid-owner@demo.com'
+      ? 'Paid Demo Owner'
+      : identifier === 'admin@demo.com'
+      ? 'Demo Admin'
+      : 'ZeroBroker Partner';
+
+  const defaultRole = identifier === 'admin@demo.com' ? 'platform-admin' : 'owner';
+
+  return {
+    id: demoUserId,
+    name: name || defaultName,
+    email: identifier.includes('@') ? identifier : undefined,
+    mobile: !identifier.includes('@') ? identifier : undefined,
+    avatarUrl: null,
+    roles: [role || defaultRole],
+    primaryRole: role || defaultRole,
+    kycStatus: 'verified',
+    kycDocuments: [],
+    trustScore: 100,
+    isBlocked: false,
+    isDemo: true,
+    isPaid,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+const DEMO_IDENTIFIERS = new Set([
+  'dummy@zerobroker.in',
+  '9999999999',
+  'paid-owner@demo.com',
+  'admin@demo.com',
+]);
+
+// ------------------------------------------------------------------
+// Provider
+// ------------------------------------------------------------------
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserAccountSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const fetchIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  // Store demo meta transiently in memory — NOT localStorage
+  const demoMetaRef = useRef<{ name?: string; role?: string; isPaid?: boolean } | null>(null);
 
+  // ----------------------------------------------------------------
+  // Session restoration on mount via /api/auth/me
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const restoreSession = async () => {
+      try {
+        // Try our secure backend session first (HttpOnly cookie)
+        const result = await authApi.getMe();
+        if (result && mountedRef.current) {
+          const { user: authUser, accessToken, refreshToken } = result;
+          if (authUser.isBlocked) {
+            toast.error('Your account has been blocked. Please contact support.');
+            await authApi.logout();
+            return;
+          }
+          // Hydrate the Supabase SDK in-memory (no LocalStorage write) so
+          // Storage, Realtime, and other SDK calls have an authenticated session.
+          if (accessToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken ?? accessToken,
+            }).catch(() => {});
+          }
+          setUser(toUserAccount(authUser));
+          offlineStorage.syncDraftWithUser(authUser.id);
+          return;
+        }
+
+        // No backend session — check for demo session in sessionStorage
+        // (sessionStorage is cleared when the tab/browser closes; safer than localStorage)
+        const demoSession = sessionStorage.getItem('zb-demo-session');
+        if (demoSession && mountedRef.current) {
+          try {
+            const profile = JSON.parse(demoSession) as UserProfile;
+            setUser({ profile, savedSearches: [], favorites: [], recentActivity: [] });
+          } catch {
+            sessionStorage.removeItem('zb-demo-session');
+          }
+        }
+      } catch (err) {
+        console.error('[AuthContext] Session restoration failed:', err);
+      } finally {
+        if (mountedRef.current) setIsLoading(false);
+      }
+    };
+
+    restoreSession();
+
+    // Listen for global 401 events (from appFetch interceptor)
+    const handleUnauthorized = () => {
+      console.warn('[AuthContext] Global 401 received — clearing session');
+      setUser(null);
+      sessionStorage.removeItem('zb-demo-session');
+      toast.error('Your session has expired. Please log in again.');
+      window.location.assign('/login');
+    };
+    window.addEventListener('auth-unauthorized', handleUnauthorized);
+
+    // Proactive refresh: try to refresh the access-token every 20 minutes
+    const refreshInterval = setInterval(async () => {
+      if (!mountedRef.current || !user) return;
+      await authApi.refresh().catch(() => {});
+    }, 20 * 60 * 1000);
+
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener('auth-unauthorized', handleUnauthorized);
+      clearInterval(refreshInterval);
+    };
+  }, []);
+
+  // ----------------------------------------------------------------
+  // patchLocalProfile — in-memory profile updates
+  // ----------------------------------------------------------------
   const patchLocalProfile = (patch: Partial<UserProfile>) => {
     setUser((prev) => {
       if (!prev) return prev;
-      const nextProfile: UserProfile = {
-        ...prev.profile,
-        ...patch,
-        updatedAt: new Date().toISOString(),
-      };
-      if (prev.profile.isDemo) {
-        localStorage.setItem('zerobroker-demo-session', JSON.stringify(nextProfile));
+      const nextProfile: UserProfile = { ...prev.profile, ...patch, updatedAt: new Date().toISOString() };
+      if (nextProfile.isDemo) {
+        sessionStorage.setItem('zb-demo-session', JSON.stringify(nextProfile));
       }
       return { ...prev, profile: nextProfile };
     });
   };
 
+  // ----------------------------------------------------------------
+  // loginWithOtp — initiate OTP
+  // ----------------------------------------------------------------
+  const loginWithOtp = async (
+    identifier: string,
+    type: 'email' | 'phone',
+    name?: string,
+    role?: string
+  ) => {
+    setIsLoading(true);
+    try {
+      if (DEMO_IDENTIFIERS.has(identifier)) {
+        // Store demo meta in memory only
+        demoMetaRef.current = {
+          name,
+          role,
+          isPaid: identifier === 'paid-owner@demo.com',
+        };
+        await new Promise((r) => setTimeout(r, 800));
+        toast.success('OTP sent! (Use 12345678 for demo)');
+        return;
+      }
+
+      const cleanIdentifier = identifier.trim().toLowerCase();
+      if (type === 'email' && isValidEmail(cleanIdentifier)) {
+        await assertEmailNotDisposable(cleanIdentifier);
+      }
+
+      await authApi.sendOtp(cleanIdentifier, type, name, role);
+      toast.success(`OTP sent to your ${type === 'email' ? 'email' : 'phone'}!`);
+    } catch (err) {
+      logError(err, { action: 'auth.loginWithOtp' });
+      toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.loginWithOtp' }) || 'Failed to send OTP');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------
+  // verifyOtp — complete OTP flow and obtain session cookie
+  // ----------------------------------------------------------------
+  const verifyOtp = async (identifier: string, token: string, type: 'email' | 'phone') => {
+    setIsLoading(true);
+    try {
+      if (DEMO_IDENTIFIERS.has(identifier) && token === '12345678') {
+        await new Promise((r) => setTimeout(r, 800));
+        const meta = demoMetaRef.current;
+        const profile = buildDemoProfile(identifier, meta?.name, meta?.role, meta?.isPaid);
+        demoMetaRef.current = null;
+
+        setUser({ profile, savedSearches: [], favorites: [], recentActivity: [] });
+        sessionStorage.setItem('zb-demo-session', JSON.stringify(profile));
+        offlineStorage.syncDraftWithUser(profile.id);
+        toast.success('Logged in successfully (Demo Mode)!');
+        return;
+      }
+
+      const { user: authUser, accessToken, refreshToken } = await authApi.verifyOtp(identifier.trim(), token, type);
+      // Hydrate Supabase SDK in-memory for Storage, Realtime, etc.
+      if (accessToken) {
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken ?? accessToken,
+        }).catch(() => {});
+      }
+      queryClient.clear();
+      setUser(toUserAccount(authUser));
+      offlineStorage.syncDraftWithUser(authUser.id);
+      toast.success('Logged in successfully!');
+    } catch (err) {
+      logError(err, { action: 'auth.verifyOtp' });
+      toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.verifyOtp' }) || 'Invalid OTP');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------
+  // signIn — email + password
+  // ----------------------------------------------------------------
+  const signIn = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const { user: authUser, accessToken, refreshToken } = await authApi.signIn(email, password);
+      // Hydrate Supabase SDK in-memory for Storage, Realtime, etc.
+      if (accessToken) {
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken ?? accessToken,
+        }).catch(() => {});
+      }
+      queryClient.clear();
+      setUser(toUserAccount(authUser));
+      offlineStorage.syncDraftWithUser(authUser.id);
+      toast.success('Logged in successfully!');
+    } catch (err) {
+      logError(err, { action: 'auth.signIn' });
+      const message = (err as Error).message;
+      if (message?.includes('Invalid email or password') || message?.includes('Invalid login credentials')) {
+        toast.error('Invalid email or password.');
+      } else {
+        toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.signIn' }));
+      }
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------
+  // signInWithOAuth — delegated to Supabase (returns redirect)
+  // ----------------------------------------------------------------
+  const signInWithOAuth = async (provider: 'google' | 'github') => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+    } catch (err) {
+      logError(err, { action: 'auth.signInWithOAuth' });
+      toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.signInWithOAuth' }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------
+  // signUp — delegates to Supabase, no self-storage
+  // ----------------------------------------------------------------
+  const signUp = async (email: string, password: string, name: string, role = 'tenant') => {
+    setIsLoading(true);
+    try {
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!passwordRegex.test(password)) {
+        throw new Error(
+          'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.'
+        );
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { name, primary_role: role },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (error) throw error;
+      if (data.user) {
+        toast.success('Registration successful! Please check your email for verification.');
+      }
+    } catch (err) {
+      logError(err, { action: 'auth.signUp' });
+      toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.signUp' }));
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------
+  // updatePassword
+  // ----------------------------------------------------------------
+  const updatePassword = async (newPassword: string) => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast.success('Password updated successfully!');
+    } catch (err) {
+      logError(err, { action: 'auth.updatePassword' });
+      toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.updatePassword' }));
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------
+  // updateProfile
+  // ----------------------------------------------------------------
+  const updateProfile = async (payload: { name: string; mobile?: string | null }) => {
+    if (!user) throw new Error('Not authenticated');
+    const name = payload.name.trim();
+    const mobile = payload.mobile?.trim() || null;
+
+    if (name.length < 2) throw new Error('Name must be at least 2 characters');
+    if (mobile && !/^\+?\d{10,15}$/.test(mobile)) throw new Error('Invalid mobile number');
+
+    if (user.profile.isDemo) {
+      patchLocalProfile({ name, mobile: mobile ?? undefined });
+      return;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name, mobile })
+      .eq('id', user.profile.id);
+
+    if (error) throw error;
+    patchLocalProfile({ name, mobile: mobile ?? undefined });
+  };
+
+  // ----------------------------------------------------------------
+  // uploadAvatar
+  // ----------------------------------------------------------------
   const readFileAsDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -60,359 +444,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       reader.readAsDataURL(file);
     });
 
-  useEffect(() => {
-    let mounted = true;
-
-    // Check active session on mount
-    const initializeAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        
-        if (session?.user && mounted) {
-          const fetchId = Math.random().toString(36).substring(7);
-          fetchIdRef.current = fetchId;
-          await fetchProfile(session.user.id, fetchId);
-        } else if (mounted) {
-          // Check for demo user session in localStorage
-          const demoSession = localStorage.getItem('zerobroker-demo-session');
-          if (demoSession) {
-            const profile = JSON.parse(demoSession);
-            setUser({
-              profile,
-              savedSearches: [],
-              favorites: [],
-              recentActivity: [],
-            });
-          }
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        if (mounted) setIsLoading(false);
-      }
-    };
-
-    initializeAuth();
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (session?.user) {
-          // Clear cache on login to prevent stale data from anonymous/previous session
-          if (event === 'SIGNED_IN') {
-            queryClient.clear();
-          }
-          const fetchId = Math.random().toString(36).substring(7);
-          fetchIdRef.current = fetchId;
-          await fetchProfile(session.user.id, fetchId);
-        } else {
-          setIsLoading(false);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        fetchIdRef.current = null;
-        setUser(null);
-        localStorage.removeItem('zerobroker-demo-session');
-        setIsLoading(false);
-      } else {
-        // Handle all other events (USER_UPDATED, INITIAL_SESSION, PASSWORD_RECOVERY, etc.)
-        setIsLoading(false);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const fetchProfile = async (userId: string, fetchId: string) => {
-    try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) throw error;
-
-      if (profile && fetchIdRef.current === fetchId) {
-        if (profile.is_blocked) {
-          toast.error('Your account is blocked. Please contact support.');
-          await supabase.auth.signOut();
-          return;
-        }
-        // Transform DB profile to UserProfile type
-        const userProfile: UserProfile = {
-          id: profile.id,
-          name: profile.name || 'User',
-          email: profile.email,
-          mobile: profile.mobile,
-          avatarUrl: profile.avatar_url,
-          roles: profile.roles || ['tenant'],
-          primaryRole: profile.primary_role || 'tenant',
-          kycStatus: profile.kyc_status || 'unverified',
-          kycDocuments: [], // In a real app, fetch these separately
-          trustScore: profile.trust_score || 0,
-          isBlocked: profile.is_blocked || false,
-          isDemo: profile.id === '00000000-0000-0000-0000-000000000000' || profile.id === 'd0000000-0000-0000-0000-000000000001',
-          createdAt: profile.created_at,
-          updatedAt: profile.updated_at,
-        };
-
-        setUser({
-          profile: userProfile,
-          savedSearches: [], // Fetch separately
-          favorites: [], // Fetch separately
-          recentActivity: [], // Fetch separately
-        });
-
-        // Sync offline draft if exists
-        offlineStorage.syncDraftWithUser(profile.id);
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      if (fetchIdRef.current === fetchId) {
-        toast.error('Failed to load user profile');
-      }
-    } finally {
-      if (fetchIdRef.current === fetchId) {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  const loginWithOtp = async (identifier: string, type: 'email' | 'phone', name?: string, role?: string) => {
-    setIsLoading(true);
-    try {
-      // Mock flow for demo/testing
-      const isDemoUser = 
-        identifier === 'dummy@zerobroker.in' || 
-        identifier === '9999999999' || 
-        identifier === 'paid-owner@demo.com' ||
-        identifier === 'admin@demo.com';
-
-      if (isDemoUser) {
-        // Store meta for demo verification step
-        if (name || role || identifier === 'paid-owner@demo.com') {
-          const meta = { 
-            name: name || (identifier === 'paid-owner@demo.com' ? 'Paid Demo Owner' : undefined), 
-            role: role || (identifier === 'paid-owner@demo.com' ? 'owner' : undefined),
-            isPaid: identifier === 'paid-owner@demo.com'
-          };
-          localStorage.setItem('demo_user_meta', JSON.stringify(meta));
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        toast.success('OTP sent! (Use 12345678 for demo)');
-        return;
-      }
-
-      let error;
-      const cleanIdentifier = identifier.trim().toLowerCase();
-
-      if (type === 'email') {
-        if (isValidEmail(cleanIdentifier)) {
-          await assertEmailNotDisposable(cleanIdentifier);
-        }
-        const { error: err } = await supabase.auth.signInWithOtp({
-          email: cleanIdentifier,
-          options: {
-            shouldCreateUser: true,
-            data: {
-              name: name,
-              role: role
-            }
-          },
-        });
-        error = err;
-      } else {
-        let phone = identifier;
-        if (!phone.startsWith('+')) {
-          phone = phone.startsWith('91') && phone.length === 12 ? `+${phone}` : `+91${phone}`;
-        }
-        const { error: err } = await supabase.auth.signInWithOtp({
-          phone: phone,
-          options: {
-            shouldCreateUser: true,
-            data: {
-              name: name,
-              role: role
-            }
-          },
-        });
-        error = err;
-      }
-
-      if (error) throw error;
-      toast.success(`OTP sent to your ${type === 'email' ? 'email' : 'phone'}!`);
-    } catch (error) {
-      console.error('Login error:', error);
-      logError(error, { action: 'auth.loginWithOtp' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.loginWithOtp' }) || 'Failed to send OTP');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        if (error.message.includes('Email not confirmed')) {
-          toast.error('Please verify your email before logging in.');
-        } else if (error.message.includes('Invalid login credentials')) {
-          await logSecurityEvent('login-failed', { email, reason: 'Invalid credentials' });
-          toast.error('Invalid email or password.');
-        } else {
-          logError(error, { action: 'auth.signIn' });
-          toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.signIn' }));
-        }
-        throw error;
-      }
-
-      await logSecurityEvent('login-success', { email, userId: data.user?.id });
-      toast.success('Logged in successfully!');
-    } catch (error) {
-      console.error('SignIn error:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const signInWithOAuth = async (provider: 'google' | 'github') => {
-    setIsLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) throw error;
-      await logSecurityEvent('oauth-login-initiated', { provider });
-    } catch (error) {
-      console.error('OAuth error:', error);
-      logError(error, { action: 'auth.signInWithOAuth' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.signInWithOAuth' }));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const signUp = async (email: string, password: string, name: string, role: string = 'tenant') => {
-    setIsLoading(true);
-    try {
-      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-      if (!passwordRegex.test(password)) {
-        throw new Error('Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.');
-      }
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name,
-            primary_role: role,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-        await logSecurityEvent('registration-success', { email, userId: data.user.id });
-        toast.success('Registration successful! Please check your email for verification.');
-      }
-    } catch (error) {
-      console.error('SignUp error:', error);
-      logError(error, { action: 'auth.signUp' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.signUp' }));
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const updatePassword = async (newPassword: string) => {
-    setIsLoading(true);
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (error) throw error;
-      
-      await logSecurityEvent('password-changed', { userId: user?.profile.id });
-      toast.success('Password updated successfully!');
-    } catch (error) {
-      console.error('Update password error:', error);
-      logError(error, { action: 'auth.updatePassword' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.updatePassword' }));
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const updateProfile = async (payload: { name: string; mobile?: string | null }) => {
-    if (!user) throw new Error('Not authenticated');
-
-    const name = payload.name.trim();
-    const rawMobile = payload.mobile?.trim() ?? '';
-    const mobile = rawMobile.length > 0 ? rawMobile : null;
-
-    if (name.length < 2) {
-      throw new Error('Name must be at least 2 characters long');
-    }
-
-    if (mobile && !/^\+?\d{10,15}$/.test(mobile)) {
-      throw new Error('Please enter a valid mobile number');
-    }
-
-    if (user.profile.isDemo) {
-      patchLocalProfile({ name, mobile: mobile ?? undefined });
-      return;
-    }
-
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!sessionData.session) throw new Error('Not authenticated');
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ name, mobile })
-      .eq('id', user.profile.id);
-
-    if (error) throw error;
-
-    patchLocalProfile({ name, mobile: mobile ?? undefined });
-  };
-
   const uploadAvatar = async (file: File) => {
     if (!user) throw new Error('Not authenticated');
-
     const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
-    const maxBytes = 5 * 1024 * 1024;
-
-    if (!allowedTypes.has(file.type)) {
-      throw new Error('Please upload a JPG, PNG, or WEBP image');
-    }
-    if (file.size > maxBytes) {
-      throw new Error('Image size must be 5MB or less');
-    }
+    if (!allowedTypes.has(file.type)) throw new Error('Please upload a JPG, PNG, or WEBP image');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Image size must be 5 MB or less');
 
     if (user.profile.isDemo) {
       const dataUrl = await readFileAsDataUrl(file);
@@ -420,223 +456,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return dataUrl;
     }
 
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!sessionData.session) throw new Error('Not authenticated');
-
     const ext = file.name.split('.').pop() || 'png';
-    const fileName = `${crypto.randomUUID()}.${ext}`;
-    const filePath = `${user.profile.id}/${fileName}`;
-
+    const filePath = `${user.profile.id}/${crypto.randomUUID()}.${ext}`;
     const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file);
     if (uploadError) throw uploadError;
 
     const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
     const publicUrl = data.publicUrl;
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ avatar_url: publicUrl })
-      .eq('id', user.profile.id);
-
-    if (updateError) throw updateError;
+    const { error } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.profile.id);
+    if (error) throw error;
 
     patchLocalProfile({ avatarUrl: publicUrl });
     return publicUrl;
   };
 
-  const logSecurityEvent = async (type: string, metadata: Record<string, unknown> & { email?: string; userId?: string }) => {
-    if (!user && !metadata.email) return;
-    
-    try {
-      await supabase.from('security_logs').insert({
-        user_id: user?.profile.id || metadata.userId,
-        event_type: type,
-        metadata,
-        ip_address: '0.0.0.0',
-        user_agent: navigator.userAgent,
-        created_at: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error('Failed to log security event:', err);
-    }
-  };
-
-  const enrollMfa = async () => {
-    const { data, error } = await supabase.auth.mfa.enroll({
-      factorType: 'totp',
-    });
-
-    if (error) throw error;
-    
-    return {
-      qrCode: data.totp.qr_code,
-      secret: data.totp.secret,
-      factorId: data.id,
-    };
-  };
-
-  const verifyAndEnableMfa = async (code: string, factorId: string) => {
-    const { error } = await supabase.auth.mfa.challengeAndVerify({
-      factorId,
-      code,
-    });
-
-    if (error) throw error;
-    
-    await logSecurityEvent('mfa-enabled', { factorId });
-    toast.success('MFA enabled successfully!');
-  };
-
-  const unenrollMfa = async (factorId: string) => {
-    const { error } = await supabase.auth.mfa.unenroll({
-      factorId,
-    });
-
-    if (error) throw error;
-    
-    await logSecurityEvent('mfa-disabled', { factorId });
-    toast.success('MFA disabled successfully!');
-  };
-
-  const verifyOtp = async (identifier: string, token: string, type: 'email' | 'phone') => {
-    setIsLoading(true);
-    try {
-      // Mock verification for demo/testing
-      const isDemoUser = 
-        identifier === 'dummy@zerobroker.in' || 
-        identifier === '9999999999' || 
-        identifier === 'paid-owner@demo.com' ||
-        identifier === 'admin@demo.com';
-
-      if (isDemoUser && token === '12345678') {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Use different ID for paid demo owner to avoid seeing seeded public properties as their own
-        const demoUserId =
-          identifier === 'paid-owner@demo.com'
-            ? 'd0000000-0000-0000-0000-000000000001'
-            : identifier === 'admin@demo.com'
-              ? 'a0000000-0000-0000-0000-000000000001'
-              : '00000000-0000-0000-0000-000000000000';
-
-        // Mock profile data directly to avoid RLS issues without session
-        const mockProfile: UserProfile = {
-          id: demoUserId,
-          name:
-            identifier === 'paid-owner@demo.com'
-              ? 'Paid Demo Owner'
-              : identifier === 'admin@demo.com'
-                ? 'Demo Admin'
-                : 'ZeroBroker Partner',
-          email: type === 'email' ? identifier : undefined,
-          mobile: type === 'phone' ? identifier : undefined,
-          avatarUrl: null,
-          roles: identifier === 'admin@demo.com' ? ['platform-admin'] : ['owner'],
-          primaryRole: identifier === 'admin@demo.com' ? 'platform-admin' : 'owner',
-          kycStatus: 'verified',
-          kycDocuments: [],
-          trustScore: 100,
-          isBlocked: false,
-          isDemo: true, // Mark as demo user
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isPaid: identifier === 'paid-owner@demo.com' // Explicitly set paid status
-        };
-
-        // If specific name/role provided during login, use them for demo
-        const demoUser = localStorage.getItem('demo_user_meta');
-        if (demoUser) {
-           const meta = JSON.parse(demoUser);
-           mockProfile.name = meta.name || mockProfile.name;
-           mockProfile.primaryRole = meta.role || mockProfile.primaryRole;
-           mockProfile.roles = [meta.role || 'tenant'];
-           if (meta.isPaid) mockProfile.isPaid = true;
-        }
-
-        setUser({
-          profile: mockProfile,
-          savedSearches: [],
-          favorites: [],
-          recentActivity: [],
-        });
-        
-        // Persist demo session for reloads
-        localStorage.setItem('zerobroker-demo-session', JSON.stringify(mockProfile));
-        
-        // Sync offline draft for demo user
-        offlineStorage.syncDraftWithUser(mockProfile.id);
-        
-        toast.success('Logged in successfully (Demo Mode)!');
-        localStorage.removeItem('demo_user_meta');
-        return;
-      }
-
-      let error;
-      const cleanIdentifier = identifier.trim().toLowerCase();
-
-      if (type === 'email') {
-        // Try magiclink first (standard for signInWithOtp)
-        const { error: err } = await supabase.auth.verifyOtp({
-          email: cleanIdentifier,
-          token,
-          type: 'magiclink',
-        });
-        
-        if (err) {
-          // If magiclink fails, it might be a new user signup confirmation
-          const { error: signupErr } = await supabase.auth.verifyOtp({
-            email: cleanIdentifier,
-            token,
-            type: 'signup',
-          });
-          
-          if (signupErr) {
-            // Some older or specific configurations might use 'email' type
-            const { error: emailErr } = await supabase.auth.verifyOtp({
-              email: cleanIdentifier,
-              token,
-              type: 'email',
-            });
-            
-            if (emailErr) {
-              // If all fail, return the most descriptive error
-              error = err || signupErr || emailErr;
-            } else {
-              error = null;
-            }
-          } else {
-            error = null;
-          }
-        } else {
-          error = null;
-        }
-      } else {
-        let phone = identifier;
-        if (!phone.startsWith('+')) {
-          phone = phone.startsWith('91') && phone.length === 12 ? `+${phone}` : `+91${phone}`;
-        }
-        const { error: err } = await supabase.auth.verifyOtp({
-          phone: phone, // Phone numbers shouldn't be lowercased
-          token,
-          type: 'sms',
-        });
-        error = err;
-      }
-
-      if (error) throw error;
-      toast.success('Logged in successfully!');
-    } catch (error) {
-      console.error('Verify error:', error);
-      logError(error, { action: 'auth.verifyOtp' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.verifyOtp' }) || 'Invalid OTP');
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = async () => {
+  // ----------------------------------------------------------------
+  // logout
+  // ----------------------------------------------------------------
+  const logout = useCallback(async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
@@ -644,37 +482,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       abortAllRequests();
       await queryClient.cancelQueries();
 
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      // Invalidate server-side session and clear cookie
+      await authApi.logout().catch((err) => console.warn('[Auth] logout error (non-critical):', err));
 
+      // Clear non-auth app data
       try {
-        localStorage.clear();
-        sessionStorage.clear();
-        console.log('[Auth] localStorage and sessionStorage cleared successfully.');
+        clearAllAppData();
       } catch (e) {
-        console.warn('Full storage cleanup failed during logout', e);
+        console.warn('[Auth] clearAllAppData failed:', e);
       }
+
+      // Clear demo session from sessionStorage
+      sessionStorage.removeItem('zb-demo-session');
 
       queryClient.clear();
       setUser(null);
       toast.success('Logged out successfully');
 
-      try {
-        if (import.meta.env.MODE !== 'test') {
-          window.location.assign('/login');
-        }
-      } catch {
-        // ignore
+      if (import.meta.env.MODE !== 'test') {
+        window.location.assign('/login');
       }
-    } catch (error) {
-      console.error('Logout error:', error);
-      logError(error, { action: 'auth.logout' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'auth.logout' }) || 'Failed to logout');
+    } catch (err) {
+      logError(err, { action: 'auth.logout' });
+      toast.error(getUserFriendlyErrorMessage(err, { action: 'auth.logout' }) || 'Failed to logout');
     } finally {
-      // Ensure loading is cleared regardless of outcome
       setIsLoading(false);
       setIsLoggingOut(false);
     }
+  }, [isLoggingOut]);
+
+  // ----------------------------------------------------------------
+  // MFA
+  // ----------------------------------------------------------------
+  const enrollMfa = async () => {
+    const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+    if (error) throw error;
+    return { qrCode: data.totp.qr_code, secret: data.totp.secret };
+  };
+
+  const verifyAndEnableMfa = async (code: string, factorId: string) => {
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+    if (error) throw error;
+    toast.success('MFA enabled successfully!');
+  };
+
+  const unenrollMfa = async (factorId: string) => {
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    if (error) throw error;
+    toast.success('MFA disabled successfully!');
   };
 
   return (
@@ -685,10 +540,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoggingOut,
         loginWithOtp,
         verifyOtp,
-         signIn,
-         signInWithOAuth,
-         signUp,
-         updatePassword,
+        signIn,
+        signInWithOAuth,
+        signUp,
+        updatePassword,
         updateProfile,
         updateKycStatus: (status) => patchLocalProfile({ kycStatus: status }),
         uploadAvatar,
@@ -705,8 +560,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }

@@ -171,7 +171,7 @@ export function Footer() {
             
             <div className="grid gap-6">
               {[
-                { icon: Phone, label: '+91 98765 43210', href: 'tel:+919876543210' },
+                { icon: Phone, label: '+91 78977 73335', href: 'tel:+917897773335' },
                 { icon: Mail, label: 'support@zerobroker.in', href: 'mailto:support@zerobroker.in' },
                 { icon: MapPin, label: 'HSR Layout, Bangalore', href: null },
               ].map((item, i) => (

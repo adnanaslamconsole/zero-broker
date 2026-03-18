@@ -98,7 +98,7 @@ export function FeaturedProperties() {
 
         {/* Property Grid */}
         <div className="responsive-grid">
-          {featuredProperties.map((property, index) => (
+          {featuredProperties?.map((property, index) => (
             <motion.div
               key={property.id}
               initial={{ opacity: 0, y: 20 }}
