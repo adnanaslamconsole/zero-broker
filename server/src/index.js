@@ -29,8 +29,13 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:8080',
   'http://localhost:8081',
+  'https://zero-broker.vercel.app',
+  'https://zero-broker-frontend.vercel.app',
+  "https://zerobrokerapp.netlify.app",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
+
+app.options("*", cors());
 
 app.use(cors({
   origin: (origin, callback) => {
