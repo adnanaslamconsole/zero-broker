@@ -28,17 +28,19 @@ mongoose.connect(MONGODB_URI, {
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:8080',
+  'https://zerobrokerapp.netlify.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean).map(url => url.replace(/\/$/, "")); // Strip trailing slashes
 
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.) or from allowed list
-    const isAllowed = !origin || allowedOrigins.some(ao => ao === origin);
+    const isAllowed = !origin || allowedOrigins.includes(origin);
+    
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.error(`CORS rejected for origin: ${origin}`);
+      console.error(`🚨 CORS REJECTED 🚨 origin: "${origin}" | Expected one of: ${JSON.stringify(allowedOrigins)}`);
       callback(new Error(`CORS policy: origin ${origin} not allowed`));
     }
   },
