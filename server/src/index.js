@@ -26,23 +26,29 @@ mongoose.connect(MONGODB_URI, {
 
 // Allow requests from the frontend with credentials (cookies)
 const allowedOrigins = [
+  'http://localhost:5173',
   'http://localhost:8080',
   process.env.FRONTEND_URL,
-].filter(Boolean);
+].filter(Boolean).map(url => url.replace(/\/$/, "")); // Strip trailing slashes
 
-app.options("*", cors());
-
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.) or from allowed list
-    if (!origin || allowedOrigins.includes(origin)) {
+    const isAllowed = !origin || allowedOrigins.some(ao => ao === origin);
+    if (isAllowed) {
       callback(null, true);
     } else {
+      console.error(`CORS rejected for origin: ${origin}`);
       callback(new Error(`CORS policy: origin ${origin} not allowed`));
     }
   },
-  credentials: true, // CRITICAL: allow cookies to be sent cross-origin
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Handle all preflight requests
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
