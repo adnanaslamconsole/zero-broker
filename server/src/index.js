@@ -13,10 +13,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/zerobroker';
 
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB Successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Connect to MongoDB with Production Settings
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000,
+  autoIndex: true, // Auto-build indexes for development convenience
+})
+  .then(() => console.log('✅ Connected to MongoDB Successfully'))
+  .catch(err => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+    process.exit(1); // Exit if DB connection fails in production
+  });
 
 // Allow requests from the frontend with credentials (cookies)
 const allowedOrigins = [
@@ -41,6 +47,12 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); // Parse incoming HttpOnly cookies
+
+// Simple Request Logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 
 // Global Cache-Control Middleware — prevent stale auth state in mobile/desktop
 app.use((req, res, next) => {

@@ -10,48 +10,64 @@ const { normalizeCity } = require('../utils/locationHelper');
  */
 router.get('/search', async (req, res) => {
   try {
-    const { q, type, property } = req.query;
+    const { q, type, property, minPrice, maxPrice, page = 1, limit = 10 } = req.query;
     
-    // Default search criteria
+    // 1. Sanitization & Input Processing
+    const pageSize = Math.min(parseInt(limit), 50); // Cap limit at 50
+    const skip = (parseInt(page) - 1) * pageSize;
+    const searchArea = q ? q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null; // Sanitize regex
+
+    // 2. Build Query
     let query = { isAvailable: true };
 
-    // 1. Location Search (City Normalization + Broad Match)
-    if (q) {
-      const cityToSearch = normalizeCity(q);
-      
+    if (searchArea) {
+      const cityToSearch = normalizeCity(searchArea);
       query.$or = [
         { city: { $regex: cityToSearch, $options: 'i' } },
-        { address: { $regex: q, $options: 'i' } },
-        { title: { $regex: q, $options: 'i' } }
+        { address: { $regex: searchArea, $options: 'i' } },
+        { title: { $regex: searchArea, $options: 'i' } }
       ];
     }
 
-    // 2. Listing Type Filter (rent/sale)
-    if (type) {
-      query.type = type.toLowerCase();
+    if (type) query.type = type.toLowerCase();
+    if (property) query.propertyCategory = property.toLowerCase();
+
+    // Price Filtering
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = parseInt(minPrice);
+      if (maxPrice) query.price.$lte = parseInt(maxPrice);
     }
 
-    // 3. Property Category Filter (apartment/villa/pg/commercial)
-    if (property) {
-      query.propertyCategory = property.toLowerCase();
-    }
-
-    const properties = await Property.find(query)
-      .sort({ createdAt: -1 })
-      .limit(50);
+    // 3. Execute with Pagination
+    const [properties, total] = await Promise.all([
+      Property.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize),
+      Property.countDocuments(query)
+    ]);
 
     res.json({
       success: true,
-      count: properties.length,
-      params: { q, type, property, normalizedCity: q ? normalizeCity(q) : null },
-      data: properties
+      data: properties,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: pageSize,
+        totalPages: Math.ceil(total / pageSize)
+      },
+      meta: {
+        query: q,
+        normalizedCity: searchArea ? normalizeCity(searchArea) : null
+      }
     });
   } catch (err) {
-    console.error('Search error:', err);
+    console.error('Production Search Error:', err);
     res.status(500).json({ 
       success: false, 
-      error: 'Server error during property search',
-      message: err.message 
+      error: 'An unexpected error occurred during search. Please try again later.',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 });

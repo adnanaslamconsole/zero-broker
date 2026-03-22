@@ -21,8 +21,7 @@ const propertySchema = new mongoose.Schema({
   images: [String],
   isAvailable: { type: Boolean, default: true },
   ownerId: { type: String, required: true }, // Linking to Supabase User ID or local user
-  createdAt: { type: Date, default: Date.now }
-});
+}, { timestamps: true });
 
 // Full-text index for broader search
 propertySchema.index({ title: 'text', description: 'text', address: 'text' });
