@@ -1,13 +1,14 @@
+const dotenv = require('dotenv');
+dotenv.config();
+
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const dotenv = require('dotenv');
 const otpRoutes = require('./routes/otpRoutes');
 const authRoutes = require('./routes/authRoutes');
 const propertyRoutes = require('./routes/propertyRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const mongoose = require('mongoose');
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -95,6 +96,12 @@ app.use('/api/otp', otpRoutes);
 app.use('/api/auth', authRoutes); // NEW: Secure cookie-based auth
 app.use('/api/properties', propertyRoutes); // NEW: MongoDB-based search
 
+// Admin Routes with logging
+app.use('/api/admin', (req, res, next) => {
+  console.log(`[AdminAPI] ${req.method} ${req.path} - User: ${req.user?.id || 'Unknown'}`);
+  next();
+}, adminRoutes);
+
 // Health Check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
@@ -108,4 +115,5 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
