@@ -4,11 +4,19 @@ const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const otpRoutes = require('./routes/otpRoutes');
 const authRoutes = require('./routes/authRoutes');
+const propertyRoutes = require('./routes/propertyRoutes');
+const mongoose = require('mongoose');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/zerobroker';
+
+// Connect to MongoDB
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB Successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Allow requests from the frontend with credentials (cookies)
 const allowedOrigins = [
@@ -49,6 +57,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/otp', otpRoutes);
 app.use('/api/auth', authRoutes); // NEW: Secure cookie-based auth
+app.use('/api/properties', propertyRoutes); // NEW: MongoDB-based search
 
 // Health Check
 app.get('/health', (req, res) => {

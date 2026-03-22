@@ -220,7 +220,7 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 15, scale: 0.95 }}
             transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-            className="absolute z-50 w-full mt-3 bg-card border border-border/50 shadow-2xl rounded-[1.5rem] overflow-hidden backdrop-blur-xl"
+            className="absolute z-[100] w-full mt-3 bg-card border border-border/50 shadow-2xl rounded-[1.5rem] overflow-hidden backdrop-blur-xl"
           >
             <div className="p-2 space-y-1">
               {!value && (

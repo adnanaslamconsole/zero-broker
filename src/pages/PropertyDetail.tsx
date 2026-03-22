@@ -449,20 +449,6 @@ export default function PropertyDetail() {
                   </div>
                 </div>
 
-                <div className="py-6 border-t border-border">
-                  <h2 className="text-lg font-bold text-foreground mb-4">Explore the Area</h2>
-                  <div className="aspect-[21/9] sm:aspect-video rounded-2xl overflow-hidden border border-border shadow-inner">
-                    <iframe
-                      title="Map"
-                      width="100%"
-                      height="100%"
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                      src={`https://www.google.com/maps?q=${property.latitude},${property.longitude}&output=embed`}
-                      className="grayscale contrast-[1.1]"
-                    />
-                  </div>
-                </div>
               </div>
             </div>
 

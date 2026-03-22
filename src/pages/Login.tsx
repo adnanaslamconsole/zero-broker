@@ -251,7 +251,7 @@ export default function Login() {
                           </div>
                           <Input
                             type="text"
-                            placeholder="hello@zerobroker.com"
+                            placeholder="enter your mail id"
                             value={identifier}
                             onChange={(e) => {
                               setIdentifier(e.target.value);

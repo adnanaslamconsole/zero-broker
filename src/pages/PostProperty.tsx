@@ -326,7 +326,7 @@ export default function PostProperty() {
     // Validation for photos & location (God Mode Category 3 & 4)
     if (!selectedLocation && !user.profile.isDemo) {
       console.warn('Submission blocked: No location coordinates');
-      toast.error('Please select a specific location on the map for your property');
+      toast.error('Please select a specific location from the suggestions for your property');
       setCurrentStep(2); // Jump back to location step
       return;
     }

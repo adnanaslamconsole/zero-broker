@@ -7,7 +7,12 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
-const client = twilio(accountSid, authToken);
+let client;
+if (accountSid && accountSid.startsWith('AC') && authToken && authToken !== 'your_auth_token') {
+    client = twilio(accountSid, authToken);
+} else {
+    console.warn('[SMS] Twilio credentials missing or invalid. OTP will be logged to console instead of sent via SMS.');
+}
 
 /**
  * Sends an OTP via SMS using Twilio.
@@ -26,6 +31,11 @@ const sendSMS = async (phoneNumber, otp) => {
             } else if (formattedNumber.startsWith('91') && formattedNumber.length === 12) {
                 formattedNumber = `+${formattedNumber}`;
             }
+        }
+
+        if (!client) {
+            console.log(`\n--- [MOCK SMS] ---\nTo: ${formattedNumber}\nMessage: Your verification code is: ${otp}. It will expire in 5 minutes.\n------------------\n`);
+            return;
         }
 
         const message = await client.messages.create({

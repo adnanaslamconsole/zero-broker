@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API_BASE_URL =
-  import.meta.env.VITE_OTP_API_URL || "https://zero-broker.onrender.com/api";
+  import.meta.env.VITE_OTP_API_URL || "http://localhost:3000/api";
 
 /**
  * Service to interact with the custom OTP backend.

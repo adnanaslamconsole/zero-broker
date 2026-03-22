@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Phone, Mail, Trash2, CheckCircle2, Crown, Zap, Heart, Building2, TrendingUp, ShieldCheck, AlertCircle, Plus, Info, Eye, Users as UsersIcon, CreditCard, Receipt, FileText, MessageSquare } from 'lucide-react';
+import { Calendar, MapPin, Clock, Edit2, Camera, LogOut, Phone, Mail, Trash2, CheckCircle2, Crown, Zap, Heart, Building2, TrendingUp, ShieldCheck, AlertCircle, Plus, Info, Eye, Users as UsersIcon, CreditCard, Receipt, FileText, MessageSquare, ArrowRight } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -710,16 +710,57 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-secondary/30 to-background flex flex-col">
       <Header />
-      <main className="flex-1 py-4 pb-28 sm:py-12 container mx-auto px-4 max-w-6xl overflow-x-hidden">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 sm:mb-10">
-          <div className="w-full">
-            <h1 className="text-xl xs:text-2xl sm:text-4xl font-display font-black text-foreground antialiased tracking-tight">My Dashboard</h1>
-            <p className="text-muted-foreground mt-1 text-xs sm:text-base font-medium">Manage your properties, bookings, and premium experience.</p>
+      <main className="flex-1 py-4 pb-28 sm:py-12 container mx-auto px-4 max-w-7xl overflow-x-hidden">
+        {/* Premium Header Section */}
+        <div className="relative mb-8 sm:mb-12 p-6 sm:p-10 rounded-[2.5rem] bg-card/40 backdrop-blur-md border border-border/50 overflow-hidden shadow-2xl">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -mr-32 -mt-32" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-accent/10 rounded-full blur-3xl -ml-32 -mb-32" />
+          
+          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <TrendingUp className="w-5 h-5 text-primary" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">User Insights</span>
+              </div>
+              <h1 className="text-3xl sm:text-5xl font-display font-black text-foreground antialiased tracking-tight leading-none">
+                My <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">Dashboard</span>
+              </h1>
+              <p className="text-muted-foreground text-sm sm:text-lg font-medium max-w-xl">
+                Welcome back, <span className="text-foreground font-bold">{user.profile.name.split(' ')[0]}</span>! Here's what's happening with your properties and bookings.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 w-full md:w-auto">
+              <Button variant="outline" onClick={() => navigate('/post-property')} className="flex-1 md:flex-none gap-2 min-h-[52px] px-6 rounded-2xl font-bold border-primary/20 hover:border-primary/50 transition-all bg-background/50">
+                <Plus className="w-5 h-5 text-primary" /> Post New
+              </Button>
+              <Button variant="destructive" onClick={handleLogout} className="flex-1 md:flex-none gap-2 min-h-[52px] px-6 rounded-2xl font-bold shadow-xl shadow-destructive/20 hover:shadow-destructive/30 transition-all">
+                <LogOut className="w-5 h-5" /> Logout
+              </Button>
+            </div>
           </div>
-          <Button variant="destructive" onClick={handleLogout} className="hidden sm:inline-flex w-full sm:w-auto gap-2 shadow-sm hover:shadow-lg transition-all min-h-[44px] text-xs sm:text-sm font-bold rounded-xl">
-            <LogOut className="w-4 h-4" /> Logout
-          </Button>
+
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-10">
+            {[
+              { label: 'Properties', value: ownerProperties?.length || 0, icon: Building2, color: 'text-blue-500' },
+              { label: 'Shortlisted', value: extraStats?.saved || 0, icon: Heart, color: 'text-rose-500' },
+              { label: 'My Bookings', value: bookings?.length || 0, icon: Calendar, color: 'text-amber-500' },
+              { label: 'Trust Score', value: user.profile.trustScore || 85, icon: ShieldCheck, color: 'text-emerald-500' },
+            ].map((stat, i) => (
+              <div key={i} className="group bg-background/40 hover:bg-background/60 backdrop-blur-sm border border-border/50 hover:border-primary/30 p-4 sm:p-5 rounded-3xl transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2.5 rounded-2xl bg-white shadow-sm transition-transform group-hover:scale-110", stat.color)}>
+                    <stat.icon className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary transition-colors" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-black text-foreground tracking-tight mb-0.5">{stat.value}</div>
+                <div className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
         
         <div className="grid gap-8 md:grid-cols-12">

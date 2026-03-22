@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LocationSearch } from '@/components/property/LocationSearch';
 
+import { setItemWithTTL } from '@/lib/localStorageTTL';
+
 type TabType = 'all' | 'rent' | 'buy' | 'pg' | 'commercial';
 
 const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
@@ -36,21 +38,29 @@ export function HeroSection() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number; name: string } | null>(null);
 
   const handleSearch = () => {
-    if (!searchQuery) return;
+    const finalSearchQuery = searchQuery || (selectedLocation?.name);
+    if (!finalSearchQuery) return;
     
     const params = new URLSearchParams();
-    params.set('q', searchQuery);
-    
-    if (activeTab !== 'all') {
-      params.set('type', activeTab);
-    }
+    params.set('q', finalSearchQuery);
     
     if (selectedLocation) {
-      params.set('lat', selectedLocation.lat.toString());
-      params.set('lng', selectedLocation.lon.toString());
+      setItemWithTTL('user_city', selectedLocation.name, 1440);
+      setItemWithTTL('user_lat', selectedLocation.lat.toString(), 1440);
+      setItemWithTTL('user_lng', selectedLocation.lon.toString(), 1440);
+    }
+    
+    if (activeTab === 'rent') {
+      params.set('type', 'rent');
+    } else if (activeTab === 'buy') {
+      params.set('type', 'sale');
+    } else if (activeTab === 'pg') {
+      params.set('property', 'pg');
+    } else if (activeTab === 'commercial') {
+      params.set('property', 'commercial');
     }
 
     navigate(`/properties?${params.toString()}`);
@@ -126,7 +136,7 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="bg-white/95 backdrop-blur-2xl rounded-3xl sm:rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] p-5 sm:p-8 lg:p-10 search-bar text-left mx-2 sm:mx-0 border border-white/20"
+            className="relative z-40 bg-white/95 backdrop-blur-2xl rounded-3xl sm:rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] p-5 sm:p-8 lg:p-10 search-bar text-left mx-2 sm:mx-0 border border-white/20"
           >
             {/* Tabs */}
             <div className="flex items-center gap-1.5 sm:gap-2 mb-4 sm:mb-8 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2 sm:mx-0 sm:px-0">
@@ -157,7 +167,8 @@ export function HeroSection() {
                   value={searchQuery}
                   onChange={setSearchQuery}
                   onLocationSelect={(loc) => {
-                    setSelectedLocation({ lat: loc.lat, lon: loc.lon });
+                    setSelectedLocation(loc);
+                    setSearchQuery(loc.name);
                   }}
                   placeholder="Enter city, locality..."
                   className="w-full h-14 sm:h-20 pl-11 sm:pl-14 rounded-xl sm:rounded-3xl border-2 border-secondary bg-secondary/20 focus-visible:ring-primary focus-visible:border-primary transition-all text-sm sm:text-lg font-semibold"
