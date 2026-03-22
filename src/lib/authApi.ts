@@ -1,25 +1,39 @@
 /**
  * authApi.ts
- * 
- * Thin client for all /api/auth/* endpoints on the Express backend.
- * Uses `credentials: 'include'` so the browser automatically sends and
- * receives the HttpOnly session cookie on every request.
- * 
- * NO tokens are ever stored in JavaScript-accessible storage.
+ *
+ * Production-ready API client for /api/auth/*
+ * - Uses HttpOnly cookies (secure)
+ * - Works with Netlify (frontend) + Render (backend)
+ * - Handles errors + network failures cleanly
  */
 
-const BASE_URL = import.meta.env.VITE_AUTH_SERVER_URL || 'http://localhost:3000';
+const BASE_URL =
+  (import.meta.env.VITE_AUTH_SERVER_URL as string)?.replace(/\/$/, "") ||
+  "http://localhost:3000" ||
+  "https://zerobrokerapp.netlify.app";
 
-async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    credentials: 'include',        // Always include HttpOnly cookies
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
-  });
-  return res;
+/**
+ * Generic fetch wrapper with error handling
+ */
+async function authFetch(
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      credentials: "include", // required for cookies
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers ?? {}),
+      },
+    });
+
+    return res;
+  } catch (error) {
+    console.error("Network error:", error);
+    throw new Error("Network error. Please check your connection.");
+  }
 }
 
 export interface AuthUser {
@@ -41,88 +55,124 @@ export interface AuthUser {
 
 export const authApi = {
   /**
-   * Initiate OTP flow (email or phone).
+   * Send OTP (email or phone)
    */
-  sendOtp: async (identifier: string, type: 'email' | 'phone', name?: string, role?: string) => {
-    const res = await authFetch('/api/auth/send-otp', {
-      method: 'POST',
+  async sendOtp(
+    identifier: string,
+    type: "email" | "phone",
+    name?: string,
+    role?: string,
+  ) {
+    const res = await authFetch("/api/auth/send-otp", {
+      method: "POST",
       body: JSON.stringify({ identifier, type, name, role }),
     });
+
+    const body = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Failed to send OTP');
+      throw new Error(body?.error || "Failed to send OTP");
     }
-    return res.json();
+
+    return body;
   },
 
   /**
-   * Verify OTP — the backend will set the HttpOnly cookie on success.
+   * Verify OTP
    */
-  verifyOtp: async (
+  async verifyOtp(
     identifier: string,
     token: string,
-    type: 'email' | 'phone'
-  ): Promise<{ user: AuthUser; accessToken: string; refreshToken: string }> => {
-    const res = await authFetch('/api/auth/verify-otp', {
-      method: 'POST',
+    type: "email" | "phone",
+  ): Promise<{ user: AuthUser; accessToken: string; refreshToken: string }> {
+    const res = await authFetch("/api/auth/verify-otp", {
+      method: "POST",
       body: JSON.stringify({ identifier, token, type }),
     });
+
+    const body = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Invalid or expired OTP');
+      throw new Error(body?.error || "Invalid or expired OTP");
     }
-    return res.json();
+
+    return body;
   },
 
   /**
-   * Password sign in — backend sets HttpOnly cookie on success.
+   * Email + password login
    */
-  signIn: async (email: string, password: string): Promise<{ user: AuthUser; accessToken: string; refreshToken: string }> => {
-    const res = await authFetch('/api/auth/sign-in', {
-      method: 'POST',
+  async signIn(
+    email: string,
+    password: string,
+  ): Promise<{ user: AuthUser; accessToken: string; refreshToken: string }> {
+    const res = await authFetch("/api/auth/sign-in", {
+      method: "POST",
       body: JSON.stringify({ email, password }),
     });
+
+    const body = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Invalid email or password');
+      throw new Error(body?.error || "Invalid email or password");
     }
-    return res.json();
+
+    return body;
   },
 
   /**
-   * Fetch the current session from the backend (validates cookie).
-   * Returns null if unauthenticated.
+   * Get current authenticated user
    */
-  getMe: async (): Promise<{ user: AuthUser; accessToken: string; refreshToken?: string } | null> => {
+  async getMe(): Promise<{
+    user: AuthUser;
+    accessToken: string;
+    refreshToken?: string;
+  } | null> {
     try {
-      const res = await authFetch('/api/auth/me');
+      const res = await authFetch("/api/auth/me");
+
       if (res.status === 401) return null;
       if (!res.ok) return null;
-      const body = await res.json();
-      if (!body.user) return null;
-      return body;
-    } catch {
+
+      const body = await res.json().catch(() => ({}));
+
+      return body?.user ? body : null;
+    } catch (error) {
+      console.error("getMe error:", error);
       return null;
     }
   },
 
   /**
-   * Logout — backend invalidates session and clears cookie.
+   * Logout user
    */
-  logout: async () => {
-    const res = await authFetch('/api/auth/logout', { method: 'POST' });
+  async logout() {
+    const res = await authFetch("/api/auth/logout", {
+      method: "POST",
+    });
+
+    const body = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Logout failed');
+      throw new Error(body?.error || "Logout failed");
     }
-    return res.json();
+
+    return body;
   },
 
   /**
-   * Proactively refresh the access-token cookie using the refresh-token cookie.
+   * Refresh session using refresh cookie
    */
-  refresh: async () => {
-    const res = await authFetch('/api/auth/refresh', { method: 'POST' });
-    return res.ok;
+  async refresh(): Promise<boolean> {
+    try {
+      const res = await authFetch("/api/auth/refresh", {
+        method: "POST",
+      });
+
+      return res.ok;
+    } catch (error) {
+      console.error("refresh error:", error);
+      return false;
+    }
   },
 };
