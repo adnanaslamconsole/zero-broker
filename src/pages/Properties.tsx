@@ -313,95 +313,72 @@ export default function Properties() {
       sortBy,
       userCity
     ],
-    queryFn: async ({ pageParam = 0 }) => {
+    queryFn: async ({ pageParam = 1 }) => {
+      const BASE_URL = import.meta.env.VITE_AUTH_SERVER_URL || 'http://localhost:3000';
       const PAGE_SIZE = 9;
-      const offset = typeof pageParam === 'number' ? pageParam : 0;
+      const page = typeof pageParam === 'number' ? pageParam : 1;
 
-      console.log('[Properties] Fetching with:', {
+      console.log('[Properties] Fetching from Node Backend with:', {
         city: userCity,
         type: filters.listingType,
-        search: debouncedSearchQuery
+        search: debouncedSearchQuery,
+        page
       });
 
-      // Use the prioritized RPC
-      let { data: prioritizedData, error: prioritizedError } = await supabase.rpc('get_properties_prioritized', {
-        p_city: userCity || null,
-        p_type: filters.listingType || null,
-        p_category: filters.propertyType?.length ? filters.propertyType : null,
-        p_bedrooms: filters.bhk?.length ? filters.bhk : null,
-        p_furnishing: filters.furnishing?.length ? filters.furnishing : null,
-        p_min_price: filters.minPrice || null,
-        p_max_price: filters.maxPrice || null,
-        p_search_query: searchQuery || null,
-        p_sort_by: sortBy,
-        p_limit: PAGE_SIZE,
-        p_offset: offset
-      });
-
-      // FALLBACK: If we have a city filter but it returns 0 results, try a global search
-      if (!prioritizedError && (!prioritizedData || prioritizedData.length === 0) && userCity) {
-        const { data: globalData, error: globalError } = await supabase.rpc('get_properties_prioritized', {
-          p_city: null,
-          p_type: filters.listingType || null,
-          p_category: filters.propertyType?.length ? filters.propertyType : null,
-          p_bedrooms: filters.bhk?.length ? filters.bhk : null,
-          p_furnishing: filters.furnishing?.length ? filters.furnishing : null,
-          p_min_price: filters.minPrice || null,
-          p_max_price: filters.maxPrice || null,
-          p_search_query: debouncedSearchQuery || null,
-          p_sort_by: sortBy,
-          p_limit: PAGE_SIZE,
-          p_offset: offset
+      try {
+        const queryParams = new URLSearchParams({
+          q: debouncedSearchQuery || userCity || '',
+          page: page.toString(),
+          limit: PAGE_SIZE.toString(),
         });
+
+        if (filters.listingType) queryParams.set('type', filters.listingType);
+        if (filters.propertyType?.length) queryParams.set('property', filters.propertyType[0]);
+        if (filters.minPrice) queryParams.set('minPrice', filters.minPrice.toString());
+        if (filters.maxPrice) queryParams.set('maxPrice', filters.maxPrice.toString());
+
+        const response = await fetch(`${BASE_URL}/api/properties/search?${queryParams.toString()}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch from search API');
         
-        if (!globalError && globalData && globalData.length > 0) {
-          prioritizedData = globalData;
-        }
-      }
+        const result = await response.json();
+        
+        // Map MongoDB fields to frontend Property type if necessary
+        const properties = result.data.map((p: any) => transformProperty({
+          ...p,
+          id: p._id, // Map MongoDB _id to id
+          property_category: p.propertyCategory, // Map camelCase to snake_case for transformer
+          is_available: p.isAvailable,
+          owner_id: p.ownerId,
+        }));
 
-      if (prioritizedError) {
-        console.error('Error fetching prioritized properties:', prioritizedError);
-        const isRpcError = prioritizedError.code === 'PGRST116' || prioritizedError.code === '42804' || prioritizedError.code === 'PGRST202';
-
-        if (!isRpcError) throw prioritizedError;
-
-        let query = supabase.from('properties').select('*', { count: 'exact' });
-        if (filters.listingType) query = query.eq('type', filters.listingType);
-        if (filters.propertyType?.length) query = query.in('property_category', filters.propertyType);
-        if (filters.bhk?.length) query = query.in('bedrooms', filters.bhk);
-        if (filters.furnishing?.length) query = query.in('furnishing_status', filters.furnishing);
-        if (filters.minPrice) query = query.gte('price', filters.minPrice);
-        if (filters.maxPrice) query = query.lte('price', filters.maxPrice);
-
-        if (debouncedSearchQuery) {
-          query = query.or(`title.ilike.%${debouncedSearchQuery}%,city.ilike.%${debouncedSearchQuery}%,locality.ilike.%${debouncedSearchQuery}%`);
-        }
-
-        if (sortBy === 'price-low') query = query.order('price', { ascending: true });
-        else if (sortBy === 'price-high') query = query.order('price', { ascending: false });
-        else query = query.order('created_at', { ascending: false });
-
-        const { data: fallbackData, count: fallbackCount, error: fallbackError } = await query
-          .range(offset, offset + PAGE_SIZE - 1);
+        return {
+          properties,
+          nextPage: result.pagination.page < result.pagination.totalPages ? result.pagination.page + 1 : undefined,
+          total: result.pagination.total
+        };
+      } catch (error) {
+        console.error('Error fetching from search API, falling back to Supabase:', error);
+        
+        // FALLBACK to Supabase if Node API is unavailable or failing
+        const { data: fallbackData, count: fallbackCount, error: fallbackError } = await supabase
+          .from('properties')
+          .select('*', { count: 'exact' })
+          .ilike('city', `%${userCity || ''}%`)
+          .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
         if (fallbackError) throw fallbackError;
 
         return {
           properties: fallbackData?.map(transformProperty) || [],
-          nextPage: (fallbackCount && offset + PAGE_SIZE < fallbackCount) ? offset + PAGE_SIZE : undefined,
+          nextPage: (fallbackCount && page * PAGE_SIZE < fallbackCount) ? page + 1 : undefined,
+          total: fallbackCount || 0
         };
       }
-
-      const count = prioritizedData?.[0]?.total_count || 0;
-      console.log('[Properties] Found:', prioritizedData?.length, 'total_count:', count);
-      const nextOffset = offset + PAGE_SIZE;
-
-      return {
-        properties: prioritizedData?.map(transformProperty) || [],
-        nextPage: (count && nextOffset < count) ? nextOffset : undefined,
-      };
     },
-    initialPageParam: 0,
+    initialPageParam: 1,
     getNextPageParam: (lastPage) => lastPage.nextPage,
   });
 

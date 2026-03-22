@@ -33,24 +33,16 @@ const allowedOrigins = [
 ].filter(Boolean).map(url => url.replace(/\/$/, "")); // Strip trailing slashes
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, etc.) or from allowed list
-    const isAllowed = !origin || allowedOrigins.includes(origin);
-    
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.error(`🚨 CORS REJECTED 🚨 origin: "${origin}" | Expected one of: ${JSON.stringify(allowedOrigins)}`);
-      callback(new Error(`CORS policy: origin ${origin} not allowed`));
-    }
-  },
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With'],
+  exposedHeaders: ['Set-Cookie'], // Important for session cookies
+  maxAge: 86400, // Cache preflight for 24 hours
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // Handle all preflight requests
+app.options("*", cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
