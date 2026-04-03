@@ -4,8 +4,8 @@ const propertySchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
   price: Number,
-  type: { type: String, enum: ['rent', 'sale'], default: 'rent' },
-  propertyCategory: { type: String, enum: ['apartment', 'villa', 'pg', 'commercial'], default: 'apartment' },
+  type: { type: String, enum: ['rent', 'sale', 'pg', 'commercial'], default: 'rent' },
+  propertyCategory: { type: String, enum: ['apartment', 'villa', 'independent-house', 'pg', 'commercial', 'plot', 'office', 'shop'], default: 'apartment' },
   address: { type: String, required: true },
   // Normalized city for querying
   city: { 
@@ -25,5 +25,11 @@ const propertySchema = new mongoose.Schema({
 
 // Full-text index for broader search
 propertySchema.index({ title: 'text', description: 'text', address: 'text' });
+
+// Composite indexes for performance
+propertySchema.index({ isAvailable: 1, type: 1, city: 1 });
+propertySchema.index({ isAvailable: 1, price: 1 });
+propertySchema.index({ isAvailable: 1, propertyCategory: 1 });
+propertySchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Property', propertySchema);

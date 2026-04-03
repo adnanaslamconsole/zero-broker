@@ -3,11 +3,17 @@ dotenv.config();
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const mongoSanitize = require('mongo-sanitize');
 const cookieParser = require('cookie-parser');
 const otpRoutes = require('./routes/otpRoutes');
 const authRoutes = require('./routes/authRoutes');
 const propertyRoutes = require('./routes/propertyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const seoRoutes = require('./routes/seoRoutes');
+const { apiLimiter } = require('./middleware/rateLimiter');
 const mongoose = require('mongoose');
 
 const app = express();
@@ -66,11 +72,23 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(helmet()); // Secure HTTP headers
+app.use(apiLimiter); // Apply global rate limiter
+
 // 2. Standard CORS Middleware as backup/secondary
 app.use(cors(corsOptions));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10kb' })); // Limit body size
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// Sanitize MongoDB inputs to prevent NoSQL injection
+app.use((req, res, next) => {
+  req.body = mongoSanitize(req.body);
+  req.query = mongoSanitize(req.query);
+  req.params = mongoSanitize(req.params);
+  next();
+});
+
 app.use(cookieParser()); // Parse incoming HttpOnly cookies
 
 // Simple Request Logger
@@ -94,7 +112,10 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/otp', otpRoutes);
 app.use('/api/auth', authRoutes); // NEW: Secure cookie-based auth
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/properties', propertyRoutes); // NEW: MongoDB-based search
+app.use('/api/seo', seoRoutes);
 
 // Admin Routes with logging
 app.use('/api/admin', (req, res, next) => {

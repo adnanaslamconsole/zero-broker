@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { appFetch } from '@/lib/requestAbort';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 interface KycRequest {
@@ -83,16 +84,22 @@ export const KycVerification: React.FC = () => {
 
   const updateKycMutation = useMutation({
     mutationFn: async ({ id, status, reason }: { id: string, status: 'approved' | 'rejected', reason?: string }) => {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ 
-          kyc_status: status === 'approved' ? 'verified' : 'rejected',
-          kyc_rejection_reason: reason || null,
-          trust_score: status === 'approved' ? 100 : 80 // Start verified owners at 100
-        })
-        .eq('id', id);
+      const res = await appFetch(`/api/admin/users/${id}/kyc`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          status: status === 'approved' ? 'verified' : 'rejected',
+          reason: reason || undefined 
+        }),
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update KYC status');
+      }
+      return res.json();
     },
     onSuccess: (_, variables) => {
       toast.success(`Owner ${variables.status === 'approved' ? 'verified' : 'rejected'} successfully!`);

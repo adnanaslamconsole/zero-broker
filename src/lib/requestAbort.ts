@@ -33,7 +33,7 @@ export const abortAllRequests = () => {
 const AUTH_SERVER_URL = import.meta.env.VITE_AUTH_SERVER_URL || 'http://localhost:3000';
 
 const requiresCredentials = (url: string): boolean => {
-  return url.startsWith(AUTH_SERVER_URL) || url.includes('localhost:3000');
+  return url.startsWith(AUTH_SERVER_URL) || url.includes('localhost:3000') || url.startsWith('/api/');
 };
 
 export const appFetch = (input: FetchInput, init?: FetchInit & { clearStorage?: boolean }) => {

@@ -12,6 +12,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { LocationSearch } from '@/components/property/LocationSearch';
+import SEO from '@/components/common/SEO';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { PropertyCard } from '@/components/property/PropertyCard';
@@ -25,7 +26,7 @@ import { saveSearch } from '@/lib/mockApi';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import { useGeolocation } from '@/hooks/useGeolocation';
+import { useLocation } from '@/context/LocationContext';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { LocationAccessBanner } from '@/components/location/LocationAccessBanner';
 import {
@@ -38,6 +39,7 @@ import {
 import type { Property, PropertyFilters, ListingType, PropertyType, FurnishingType } from '@/types/property';
 import { queryClient } from '@/lib/queryClient';
 import { getItemWithTTL, setItemWithTTL, removeItem } from '@/lib/localStorageTTL';
+import { PropertySkeleton } from '@/components/property/PropertySkeleton';
 
 const propertyTypes: { value: PropertyType; label: string }[] = [
   { value: 'apartment', label: 'Apartment' },
@@ -45,6 +47,8 @@ const propertyTypes: { value: PropertyType; label: string }[] = [
   { value: 'independent-house', label: 'Independent House' },
   { value: 'pg', label: 'PG/Hostel' },
   { value: 'commercial', label: 'Commercial' },
+  { value: 'office', label: 'Office Space' },
+  { value: 'shop', label: 'Shop / Showroom' },
   { value: 'plot', label: 'Plot' },
 ];
 
@@ -241,8 +245,8 @@ export default function Properties() {
     errorType: locationErrorType,
     permission: locationPermission,
     requestLocation,
-    fromCache: locationFromCache,
-  } = useGeolocation({ autoRequest: false });
+    clearCache
+  } = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
   const hasCenteredOnUser = useRef(false);
@@ -380,6 +384,9 @@ export default function Properties() {
     },
     initialPageParam: 1,
     getNextPageParam: (lastPage) => lastPage.nextPage,
+    staleTime: 5 * 60 * 1000, // 5 minutes (L2 Frontend Cache)
+    gcTime: 15 * 60 * 1000,   // 15 minutes
+    refetchOnWindowFocus: false, // Prevent redundant flashes on focus
   });
 
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
@@ -467,6 +474,10 @@ export default function Properties() {
 
   return (
     <div className="min-h-screen bg-background">
+      <SEO 
+        title={`${userCity ? `Properties in ${userCity}` : 'Search Properties'} | Zero Broker`}
+        description={`Find the best residential and commercial properties in ${userCity || 'India'} without any brokerage. Houses, flats, PGs and more.`}
+      />
       <Header />
 
       <main className="py-6">
@@ -811,9 +822,15 @@ export default function Properties() {
           )}
 
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
-              <p className="text-muted-foreground animate-pulse font-bold">Discovering amazing matches...</p>
+            <div
+              className={cn(
+                "grid gap-8",
+                viewMode === 'grid' ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : "grid-cols-1"
+              )}
+            >
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <PropertySkeleton key={i} variant={viewMode === 'list' ? 'list' : 'grid'} />
+              ))}
             </div>
           ) : filteredProperties.length > 0 ? (
             <div

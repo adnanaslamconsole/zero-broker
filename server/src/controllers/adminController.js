@@ -3,6 +3,7 @@ const Property = require('../models/Property');
 const Ticket = require('../models/Ticket');
 const SystemSetting = require('../models/SystemSetting');
 const { logAdminAction } = require('../utils/adminLogger');
+const notificationService = require('../services/notificationService');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
@@ -117,6 +118,21 @@ exports.moderateProperty = async (req, res) => {
       details: { remarks, propertyTitle: property.title },
       req
     });
+
+    // 3. Notify Owner
+    try {
+      const { data: owner } = await supabase
+        .from('profiles')
+        .select('email, mobile')
+        .eq('id', property.ownerId)
+        .single();
+      
+      if (owner) {
+        await notificationService.notifyPropertyModeration(owner, property, status === 'approved' ? 'verified' : 'rejected');
+      }
+    } catch (notifyErr) {
+      console.error('[AdminController] Notification error:', notifyErr);
+    }
 
     res.json({ message: `Property ${status} successfully`, property });
   } catch (err) {
@@ -259,9 +275,48 @@ exports.updateKycStatus = async (req, res) => {
       req
     });
 
+    // Notify User
+    try {
+      await notificationService.notifyKycStatus(data, status, reason);
+    } catch (notifyErr) {
+      console.error('[AdminController] KYC Notification error:', notifyErr);
+    }
+
     res.json({ message: `KYC status updated to ${status}`, profile: data });
   } catch (err) {
     console.error('[AdminController] updateKycStatus error:', err);
     res.status(500).json({ error: 'Failed to update KYC status' });
+  }
+};
+
+/**
+ * POST /api/admin/send-email
+ * Proxy for Supabase Edge Functions to avoid CORS and handle auth securely.
+ */
+exports.sendEmail = async (req, res) => {
+  try {
+    const { to, subject, html, text, replyTo, from } = req.body;
+
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: { to, subject, html, text, replyTo, from }
+    });
+
+    if (error) throw error;
+
+    // Log the email action
+    await logAdminAction({
+      adminId: req.user.id,
+      adminName: req.user.profile.name,
+      action: 'SEND_EMAIL',
+      targetId: to,
+      targetType: 'EMAIL',
+      details: { subject },
+      req
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error('[AdminController] sendEmail error:', err);
+    res.status(500).json({ error: err.message || 'Failed to send email' });
   }
 };

@@ -9,9 +9,11 @@ import { ListingModeration } from '@/components/admin/ListingModeration';
 import { RevenueAnalytics } from '@/components/admin/RevenueAnalytics';
 import { KycVerification } from '@/components/admin/KycVerification';
 import { BlogManager } from '@/components/admin/BlogManager';
-import { EmailTestPanel } from '@/components/admin/EmailTestPanel';
+import { ActivityLogs } from '@/components/admin/ActivityLogs';
+import { DisputeSystem } from '@/components/admin/DisputeSystem';
+import { SystemSettingsPanel } from '@/components/admin/SystemSettingsPanel';
 import { useAuth } from '@/context/AuthContext';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, BookOpen, Users, ClipboardList, Activity, MessageCircle, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function AdminDashboard() {
@@ -72,7 +74,9 @@ export default function AdminDashboard() {
               <TabsTrigger value="listings">Listing Moderation</TabsTrigger>
               <TabsTrigger value="revenue">Revenue & Analytics</TabsTrigger>
               <TabsTrigger value="blog">Blog & Content</TabsTrigger>
-              <TabsTrigger value="email">Email</TabsTrigger>
+              <TabsTrigger value="logs">Activity Logs</TabsTrigger>
+              <TabsTrigger value="disputes">Disputes & Support</TabsTrigger>
+              <TabsTrigger value="settings">System Settings</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -99,8 +103,16 @@ export default function AdminDashboard() {
               <BlogManager />
             </TabsContent>
 
-            <TabsContent value="email" className="space-y-4">
-              <EmailTestPanel />
+            <TabsContent value="logs" className="space-y-4">
+              <ActivityLogs />
+            </TabsContent>
+
+            <TabsContent value="disputes" className="space-y-4">
+              <DisputeSystem />
+            </TabsContent>
+
+            <TabsContent value="settings" className="space-y-4">
+              <SystemSettingsPanel />
             </TabsContent>
           </Tabs>
         </div>

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { toast } from 'sonner';
+import { appFetch } from './requestAbort';
 import type { NotificationItem, NotificationChannel } from '@/types/notifications';
 
 export const notificationService = {
@@ -53,13 +54,14 @@ export const notificationService = {
     bookingId: string;
     ownerId: string;
     tenantId: string;
+    propertyId: string;
     propertyTitle: string;
     amount: number;
     visitDate: string;
     visitTime: string;
     transactionRef: string;
   }) {
-    const { bookingId, ownerId, tenantId, propertyTitle, amount, visitDate, visitTime, transactionRef } = params;
+    const { bookingId, ownerId, tenantId, propertyId, propertyTitle, amount, visitDate, visitTime, transactionRef } = params;
 
     // Notify Owner
     await this.sendNotification({
@@ -78,6 +80,23 @@ export const notificationService = {
       type: 'booking-site-visit',
       metadata: { bookingId, amount, transactionReference: transactionRef },
     });
+
+    // Trigger Backend Real Notifications (Email/SMS)
+    try {
+      await appFetch('/api/notifications/notify-booking', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId,
+          ownerId,
+          propertyId,
+          bookingId,
+          visitDate,
+          visitTime
+        })
+      });
+    } catch (err) {
+      console.error('[NotificationService] Backend notification failed:', err);
+    }
 
     toast.success('Confirmations sent to both parties');
   }

@@ -3,8 +3,10 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const { authenticate } = require('../middleware/authMiddleware');
 const { isModerator, isSuperAdmin, isSupport } = require('../middleware/rbacMiddleware');
+const { adminLimiter } = require('../middleware/rateLimiter');
 
 // All routes here require authentication and at least Moderator role
+router.use(adminLimiter);
 router.use(authenticate);
 
 /**
@@ -34,5 +36,10 @@ router.patch('/tickets/:id', isSupport, adminController.updateTicket);
  */
 router.get('/settings', isModerator, adminController.getSettings);
 router.patch('/settings/:key', isSuperAdmin, adminController.updateSetting);
+
+/**
+ * Emails
+ */
+router.post('/send-email', isSupport, adminController.sendEmail);
 
 module.exports = router;

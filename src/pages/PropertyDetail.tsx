@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import type { Property } from '@/types/property';
+import SEO from '@/components/common/SEO';
 
 // Transformer function (same as in Properties.tsx)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -193,6 +194,36 @@ export default function PropertyDetail() {
 
   return (
     <div className="min-h-screen bg-background">
+      <SEO 
+        title={`${property.bhk} BHK ${property.propertyType} in ${property.locality}, ${property.city}`}
+        description={`${property.bhk} BHK ${property.propertyType} for ${property.listingType === 'rent' ? 'rent' : 'sale'} at ₹${property.price.toLocaleString()} in ${property.locality}. ${property.description.slice(0, 150)}...`}
+        ogImage={property.images[0]}
+        ogType="article"
+      />
+
+      {/* JSON-LD Structured Data */}
+      <script type="application/ld+json">
+        {JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Accommodation",
+          "name": property.title,
+          "description": property.description,
+          "image": property.images,
+          "address": {
+            "@type": "PostalAddress",
+            "streetAddress": property.address,
+            "addressLocality": property.locality,
+            "addressRegion": property.state,
+            "addressCountry": "IN"
+          },
+          "offers": {
+            "@type": "Offer",
+            "price": property.price,
+            "priceCurrency": "INR"
+          }
+        })}
+      </script>
+
       <Header />
 
       <main className="py-6">

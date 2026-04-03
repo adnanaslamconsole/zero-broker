@@ -24,6 +24,8 @@ import { useAuth } from '@/context/AuthContext';
 import { notificationService } from '@/lib/notificationService';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 import { usePropertyBooking } from '@/hooks/usePropertyBooking';
+import { loadScript } from '@/lib/externalScripts';
+import { appFetch } from '@/lib/requestAbort';
 
 interface BookingDialogProps {
   property: Property;
@@ -150,6 +152,7 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
         bookingId: booking.id,
         ownerId: property.ownerId,
         tenantId: user!.profile.id,
+        propertyId: property.id,
         propertyTitle: property.title,
         amount: 99,
         visitDate: selectedDate!.toLocaleDateString(),
@@ -199,28 +202,86 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
   };
 
   const confirmPayment = async () => {
-    // Basic frontend-level check before mutation
-    const { data: existing, error: checkError } = await supabase
-      .from('visit_bookings')
-      .select('id')
-      .eq('property_id', property.id)
-      .eq('visit_date', selectedDate!.toISOString().split('T')[0])
-      .eq('visit_time', selectedTime!)
-      .in('booking_status', ['pending', 'confirmed', 'completed'])
-      .maybeSingle();
+    try {
+      // 1. Check availability
+      const { data: existing } = await supabase
+        .from('visit_bookings')
+        .select('id')
+        .eq('property_id', property.id)
+        .eq('visit_date', selectedDate!.toISOString().split('T')[0])
+        .eq('visit_time', selectedTime!)
+        .in('booking_status', ['pending', 'confirmed', 'completed'])
+        .maybeSingle();
 
-    if (checkError) {
-      toast.error('Error checking slot availability');
-      return;
+      if (existing) {
+        toast.error('This slot has already been booked.');
+        setStep('slots');
+        return;
+      }
+
+      // 2. Load Razorpay Script
+      const isLoaded = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
+      if (!isLoaded) {
+        toast.error('Razorpay SDK failed to load. Are you online?');
+        return;
+      }
+
+      // 3. Create Order on Backend
+      const orderRes = await appFetch('/api/payments/create-order', {
+        method: 'POST',
+        body: JSON.stringify({ amount: 99, receipt: `visit_${property.id.slice(0, 8)}` })
+      });
+      const order = await orderRes.json();
+
+      if (!order.id) throw new Error('Failed to create payment order');
+
+      // 4. Open Razorpay Modal
+      const options = {
+        key: order.key,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Zero Broker',
+        description: `Visit Token for ${property.title}`,
+        order_id: order.id,
+        handler: async (response: any) => {
+          // 5. Verify Payment on Backend
+          try {
+            const verifyRes = await appFetch('/api/payments/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+            const verification = await verifyRes.json();
+
+            if (verification.success) {
+              // 6. Complete the booking mutation
+              bookVisitMutation.mutate();
+            } else {
+              toast.error('Payment verification failed. Please contact support.');
+            }
+          } catch (err) {
+            console.error('Verification error:', err);
+            toast.error('Connection error during verification');
+          }
+        },
+        prefill: {
+          name: user?.profile?.name || '',
+          email: user?.profile?.email || '',
+          contact: user?.profile?.mobile || ''
+        },
+        theme: { color: '#000000' }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+
+    } catch (err: any) {
+      console.error('Payment flow error:', err);
+      toast.error(err.message || 'Payment failed to initialize');
     }
-
-    if (existing) {
-      toast.error('This slot has already been booked. Please select another slot.');
-      setStep('slots');
-      return;
-    }
-
-    bookVisitMutation.mutate();
   };
 
   const isOwner = user?.profile?.id === property.ownerId;

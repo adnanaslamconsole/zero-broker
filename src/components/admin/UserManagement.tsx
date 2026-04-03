@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Search, Loader2, Ban, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { appFetch } from '@/lib/requestAbort';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export function UserManagement() {
@@ -39,22 +40,42 @@ export function UserManagement() {
   });
 
   const toggleBlockMutation = useMutation({
-    mutationFn: async ({ id, isBlocked }: { id: string; isBlocked: boolean }) => {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_blocked: !isBlocked })
-        .eq('id', id);
-      if (error) throw error;
+    mutationFn: async ({ id, isBlocked, reason }: { id: string; isBlocked: boolean; reason?: string }) => {
+      const res = await appFetch(`/api/admin/users/${id}/block`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isBlocked: !isBlocked, reason: reason || 'Administrative action' }),
+      });
+      
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update user status');
+      }
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast.success('User status updated');
+      toast.success('User status updated and action logged');
     },
     onError: (error: Error) => {
       logError(error, { action: 'admin.toggleBlockUser' });
-      toast.error(getUserFriendlyErrorMessage(error, { action: 'admin.toggleBlockUser' }) || 'Failed to update user status');
+      toast.error(error.message);
     },
   });
+
+  const handleToggleBlock = (user: any) => {
+    const action = user.is_blocked ? 'unblock' : 'block';
+    const reason = window.prompt(`Reason for ${action}ing ${user.email}:`, '');
+    if (reason === null) return; // Cancelled
+    
+    toggleBlockMutation.mutate({ 
+      id: user.id, 
+      isBlocked: user.is_blocked, 
+      reason: reason || undefined 
+    });
+  };
 
   const getTrustScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600 bg-green-50 border-green-200';
@@ -134,7 +155,7 @@ export function UserManagement() {
                     <Button
                       variant={user.is_blocked ? 'outline' : 'destructive'}
                       size="sm"
-                      onClick={() => toggleBlockMutation.mutate({ id: user.id, isBlocked: user.is_blocked })}
+                      onClick={() => handleToggleBlock(user)}
                       disabled={toggleBlockMutation.isPending}
                     >
                       {user.is_blocked ? (

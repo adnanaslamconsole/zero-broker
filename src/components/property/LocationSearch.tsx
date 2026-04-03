@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from '@/context/LocationContext';
 import { Input } from '@/components/ui/input';
 import { Building2, MapPin, Navigation, Search, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,8 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
   const [hasSearched, setHasSearched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const { requestLocation, coords, loading: contextLoading } = useLocation();
+  const lastRequestedCoords = useRef<{ lat: number, lon: number } | null>(null);
 
   const debouncedValue = useDebouncedValue(value, 350);
 
@@ -36,45 +39,56 @@ export function LocationSearch({ value, onChange, onLocationSelect, className, p
     if (activeDropdownCloser === closeDropdown) activeDropdownCloser = null;
   }, []);
 
-  const handleDetectLocation = () => {
+  const handleDetectLocation = async () => {
     setIsDetecting(true);
     setIsOpen(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          try {
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
-            );
-            const data = await response.json();
-            const cityName = data.address?.city || data.address?.town || data.address?.village || data.display_name.split(',')[0];
-            
-            onChange(cityName);
-            onLocationSelect({
-              lat: latitude,
-              lon: longitude,
-              name: cityName,
-            });
-            closeDropdown();
-          } catch (error) {
-            console.error('Reverse geocoding error:', error);
-            toast.error('Could not determine city name');
-          } finally {
-            setIsDetecting(false);
-          }
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          toast.error('Location access denied');
-          setIsDetecting(false);
-        }
-      );
-    } else {
-      toast.error('Geolocation not supported');
+    await requestLocation();
+    // Logic continues in useEffect when coords change
+  };
+
+  // Listen for global coords changes to handle reverse geocoding
+  useEffect(() => {
+    if (!coords || !isDetecting) return;
+    
+    // Prevent redundant reverse geocoding for the same coords
+    if (lastRequestedCoords.current?.lat === coords.latitude && lastRequestedCoords.current?.lon === coords.longitude) {
+      return;
+    }
+    
+    lastRequestedCoords.current = { lat: coords.latitude, lon: coords.longitude };
+
+    const performReverseGeocode = async () => {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&addressdetails=1`
+        );
+        const data = await response.json();
+        const cityName = data.address?.city || data.address?.town || data.address?.village || data.display_name.split(',')[0];
+        
+        onChange(cityName);
+        onLocationSelect({
+          lat: coords.latitude,
+          lon: coords.longitude,
+          name: cityName,
+        });
+        closeDropdown();
+      } catch (error) {
+        console.error('Reverse geocoding error:', error);
+        toast.error('Could not determine city name');
+      } finally {
+        setIsDetecting(false);
+      }
+    };
+
+    performReverseGeocode();
+  }, [coords, isDetecting, onChange, onLocationSelect, closeDropdown]);
+
+  // Sync isDetecting with context loading if it was started here
+  useEffect(() => {
+    if (!contextLoading && isDetecting && !coords) {
       setIsDetecting(false);
     }
-  };
+  }, [contextLoading, isDetecting, coords]);
 
   useEffect(() => {
     setHasSearched(false);

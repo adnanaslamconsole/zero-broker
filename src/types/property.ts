@@ -1,6 +1,6 @@
 // Property Types
-export type PropertyType = 'apartment' | 'villa' | 'pg' | 'commercial' | 'plot' | 'independent-house';
-export type ListingType = 'rent' | 'sale';
+export type PropertyType = 'apartment' | 'villa' | 'pg' | 'commercial' | 'plot' | 'independent-house' | 'office' | 'shop';
+export type ListingType = 'rent' | 'sale' | 'pg' | 'commercial';
 export type FurnishingType = 'furnished' | 'semi-furnished' | 'unfurnished';
 
 export interface Property {

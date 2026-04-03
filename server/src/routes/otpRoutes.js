@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const otpController = require('../controllers/otpController');
-const { otpRateLimiter } = require('../middleware/rateLimiter');
+const { authLimiter } = require('../middleware/rateLimiter');
 
 // Send OTP Route (Rate Limited)
-router.post('/send', otpRateLimiter, otpController.sendOTP);
+router.post('/send', authLimiter, otpController.sendOTP);
 
 // Verify OTP Route
 router.post('/verify', otpController.verifyOTP);

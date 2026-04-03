@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { appFetch } from '@/lib/requestAbort';
 import { getUserFriendlyErrorMessage, logError } from '@/lib/errors';
 
 export type SendEmailParams = {
@@ -60,15 +61,21 @@ export const sendEmail = async (params: SendEmailParams): Promise<SendEmailResul
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const { data, error } = await supabase.functions.invoke('send-email', {
-        body: payload,
+      const res = await appFetch('/api/admin/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to send email');
+      }
 
-      const response = data as SendEmailFunctionResponse | null;
-      const id = response?.id ?? null;
-      return { id: typeof id === 'string' ? id : null };
+      const data = await res.json();
+      return { id: typeof data.id === 'string' ? data.id : null };
     } catch (error) {
       const retry = attempt < maxAttempts && shouldRetryInvoke(error);
       logError(error, { action: 'email.send' });

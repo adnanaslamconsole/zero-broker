@@ -8,7 +8,7 @@ import { WhyChooseUs } from '@/components/home/WhyChooseUs';
 import { TestimonialsSection } from '@/components/home/TestimonialsSection';
 import { SocietyManagement } from '@/components/home/SocietyManagement';
 import { DownloadApp } from '@/components/home/DownloadApp';
-import { LocationDetector } from '@/components/common/LocationDetector';
+import SEO from '@/components/common/SEO';
 import { ShieldCheck, Sparkles, TrendingUp, MapPin } from 'lucide-react';
 import { motion, useScroll, useSpring } from 'framer-motion';
 
@@ -22,6 +22,10 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20">
+      <SEO 
+        title="Zero Broker | Buy, Rent & Sell Properties without Brokerage"
+        description="India's leading zero brokerage platform. Find flats, houses, PGs, and commercial spaces without paying extra brokerage fees."
+      />
       {/* Progress Bar */}
       <motion.div
         className="fixed top-0 left-0 right-0 h-1 bg-primary origin-left z-[100]"
@@ -41,7 +45,6 @@ const Index = () => {
         </div>
       </div>
 
-      <LocationDetector />
       <Header />
       
       <main className="relative">

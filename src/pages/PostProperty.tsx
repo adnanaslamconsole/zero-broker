@@ -598,7 +598,9 @@ export default function PostProperty() {
                                 </FormControl>
                                 <SelectContent className="rounded-2xl p-2">
                                   <SelectItem value="apartment" className="rounded-xl py-3 font-bold">Apartment</SelectItem>
+                                  <SelectItem value="independent-house" className="rounded-xl py-3 font-bold">Independent House / Building</SelectItem>
                                   <SelectItem value="villa" className="rounded-xl py-3 font-bold">Villa / House</SelectItem>
+                                  <SelectItem value="pg" className="rounded-xl py-3 font-bold">PG / Hostel</SelectItem>
                                   <SelectItem value="plot" className="rounded-xl py-3 font-bold">Plot / Land</SelectItem>
                                   <SelectItem value="office" className="rounded-xl py-3 font-bold">Office Space</SelectItem>
                                   <SelectItem value="shop" className="rounded-xl py-3 font-bold">Shop / Showroom</SelectItem>
