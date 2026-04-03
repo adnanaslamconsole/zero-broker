@@ -37,9 +37,10 @@ const corsOptions = {
   maxAge: 86400, // Cache preflight for 24 hours
 };
 
-// Connect to MongoDB with Production Settings
+// Connect to MongoDB with robust error handling
 mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 5000, // Do not wait forever for connection
+  socketTimeoutMS: 45000,
   autoIndex: true, 
 })
   .then(() => console.log('✅ Connected to MongoDB Successfully'))
@@ -114,8 +115,10 @@ app.use('/api/otp', otpRoutes);
 app.use('/api/auth', authRoutes); // NEW: Secure cookie-based auth
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/payments', paymentRoutes);
-app.use('/api/properties', propertyRoutes); // NEW: MongoDB-based search
+app.use('/api/properties', propertyRoutes);
 app.use('/api/seo', seoRoutes);
+
+console.log('[Server] APIs registered: /api/otp, /api/auth, /api/notifications, /api/payments, /api/properties');
 
 // Admin Routes with logging
 app.use('/api/admin', (req, res, next) => {

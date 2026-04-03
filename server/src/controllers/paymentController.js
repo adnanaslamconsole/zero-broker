@@ -15,13 +15,11 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'secret_placeholder',
 });
 
-/**
- * POST /api/payments/create-order
- * Initialize a Razorpay order.
- */
 exports.createOrder = async (req, res) => {
   try {
     const { amount, currency = 'INR', receipt } = req.body;
+
+    console.log('[PaymentController] Initiating createOrder:', { amount, currency, receipt });
 
     if (!amount) {
       return res.status(400).json({ error: 'Amount is required' });
@@ -34,25 +32,27 @@ exports.createOrder = async (req, res) => {
     };
 
     const order = await razorpay.orders.create(options);
+    console.log('[PaymentController] Razorpay order created:', order.id);
     
     return res.json({
       id: order.id,
       amount: order.amount,
       currency: order.currency,
-      key: process.env.RAZORPAY_KEY_ID
+      key: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder'
     });
   } catch (err) {
-    console.error('[PaymentController] createOrder error:', {
+    console.error('[PaymentController] createOrder critical error:', {
       message: err.message,
-      stack: err.stack,
       code: err.code,
+      description: err.description,
       metadata: err.metadata
     });
     
-    // Explicitly set status and JSON to avoid empty responses
+    // Explicitly set status and JSON to avoid empty responses that cause "Unexpected end of JSON input"
     return res.status(500).json({ 
-      error: 'Failed to create Razorpay order',
-      details: process.env.NODE_ENV === 'development' ? err.message : 'Internal Server Error'
+      error: 'Razorpay Order Creation Failed',
+      details: process.env.NODE_ENV === 'development' ? err.message : 'Internal Server Error',
+      hint: (err.message.includes('auth') || err.message.includes('key')) ? 'Check your RAZORPAY_KEY_ID and SECRET in .env' : undefined
     });
   }
 };

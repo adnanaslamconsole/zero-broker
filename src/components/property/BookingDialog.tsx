@@ -231,9 +231,19 @@ export const BookingDialog: React.FC<BookingDialogProps> = ({ property, open, on
         method: 'POST',
         body: JSON.stringify({ amount: 99, receipt: `visit_${property.id.slice(0, 8)}` })
       });
-      const order = await orderRes.json();
 
-      if (!order.id) throw new Error('Failed to create payment order');
+      if (!orderRes.ok) {
+        let errorData;
+        try {
+          errorData = await orderRes.json();
+        } catch (e) {
+          throw new Error(`Server Error (${orderRes.status}): Interface not responding.`);
+        }
+        throw new Error(errorData.error || errorData.details || `Error ${orderRes.status}`);
+      }
+
+      const order = await orderRes.json();
+      if (!order.id) throw new Error('Payment order initialization failed.');
 
       // 4. Open Razorpay Modal
       const options = {
